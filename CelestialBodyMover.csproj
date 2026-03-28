@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>8.0.30703</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{05A58B56-49DF-419A-B80F-E69FD0A1D158}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>CelestialBodyMover</RootNamespace>
+    <AssemblyName>CelestialBodyMover</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <DebugType>none</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+  <!-- Make sure KSPRoot is set as a system variable when building this, it should link to the root folder of your KSP install -->
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>False</Private>
+    </Reference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+    <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll" />
+    <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine*.dll" />
+    <Reference Include="$(KSPRoot)\GameData\001_ToolbarControl\Plugins\ToolbarControl.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Properties\AssemblyVersion.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>AssemblyVersion.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Source\CelestialBodyMover.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="GameData\CelestialBodyMover\CelestialBodyMover.version" />
+    <None Include="GameData\CelestialBodyMover\README.md" />
+    <None Include="Properties\AssemblyVersion.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <LastGenOutput>AssemblyVersion.cs</LastGenOutput>
+    </None>
+    <None Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\button-24.png" />
+    <None Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\button-64.png" />
+    <None Include="README.md" />
+	<None Include="git-scripts\zip.ps1" />
+  </ItemGroup>
+  <ItemGroup>
+    <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="LICENSE.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="GameData\CelestialBodyMover\Plugins\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <PostBuildEvent>
+			xcopy /y /i "$(TargetPath)" "$(SolutionDir)\GameData\CelestialBodyMover\Plugins\"
+
+			xcopy /y /i "$(TargetPath)" "$(KSPRoot)\GameData\CelestialBodyMover\Plugins\"
+		</PostBuildEvent>
+  </PropertyGroup>
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <Exec Command="&quot;$(ProgramFiles)\Microsoft Visual Studio\2022\Community\Common7\IDE\TextTransform.exe&quot; &quot;$(ProjectDir)Properties\AssemblyVersion.tt&quot;" />
+  </Target>
+  <Target Name="ZipGameData" AfterTargets="Build">
+      <Exec Command="powershell -ExecutionPolicy Bypass -File .git\zip.ps1" WorkingDirectory="$(ProjectDir)" />
+  </Target>
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>
