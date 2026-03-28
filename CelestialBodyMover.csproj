@@ -79,7 +79,9 @@
 			xcopy /y /i "$(TargetPath)" "$(SolutionDir)\GameData\CelestialBodyMover\Plugins\"
 
 			xcopy /y /i "$(TargetPath)" "$(KSPRoot)\GameData\CelestialBodyMover\Plugins\"
-		</PostBuildEvent>
+			
+			xcopy /y /i "$(TargetPath)" "C:\Users\Clayel\KSP Instances\Kerbal Space Program 1\KSP (1.12.5 STOCKALIKE)\GameData\CelestialBodyMover\Plugins\"
+    </PostBuildEvent>
   </PropertyGroup>
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
     <Exec Command="&quot;$(ProgramFiles)\Microsoft Visual Studio\2022\Community\Common7\IDE\TextTransform.exe&quot; &quot;$(ProjectDir)Properties\AssemblyVersion.tt&quot;" />

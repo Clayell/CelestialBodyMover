@@ -8,5 +8,5 @@ using System.Reflection;
 
 [assembly: AssemblyVersion("1.0.0.0")] // only the major version gets changed
 [assembly: AssemblyFileVersion("1.0.0.0")]
-[assembly: KSPAssembly("CrashMyKSP", 1, 0, 0)]
+[assembly: KSPAssembly("CelestialBodyMover", 1, 0, 0)]
 [assembly: KSPAssemblyDependency("ToolbarController", 1, 0)]

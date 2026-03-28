@@ -1,5 +1,6 @@
 ﻿using KSP.UI.Screens;
 using System;
+using System.Collections.Generic;
 using ToolbarControl_NS;
 using UnityEngine;
 using ClickThroughFix;
@@ -15,7 +16,7 @@ namespace CelestialBodyMover
         }
     }
 
-    [KSPAddon(KSPAddon.Startup.AllGameScenes, false)]
+    [KSPAddon(KSPAddon.Startup.FlightAndKSC, false)]
     public class CelestialBodyMover : MonoBehaviour
     {
         ToolbarControl toolbarControl = null;
@@ -23,6 +24,7 @@ namespace CelestialBodyMover
         GUISkin skin;
 
         bool isWindowOpen = false;
+        bool isActive = true;
 
         Rect mainRect = new Rect(100, 100, -1, -1);
 
@@ -32,7 +34,7 @@ namespace CelestialBodyMover
             {
                 toolbarControl = gameObject.AddComponent<ToolbarControl>();
                 toolbarControl.AddToAllToolbars(ToggleWindow, ToggleWindow,
-                    ApplicationLauncher.AppScenes.ALWAYS,
+                    ApplicationLauncher.AppScenes.FLIGHT & ApplicationLauncher.AppScenes.SPACECENTER,
                     "CelestialBodyMover",
                     "CelestialBodyMover_Button",
                     "CelestialBodyMover/PluginData/ToolbarIcons/button-64",
@@ -52,6 +54,12 @@ namespace CelestialBodyMover
             InitToolbar();
         }
 
+        void OnDestroy()
+        {
+            Destroy(toolbarControl);
+            toolbarControl = null;
+        }
+
         private void ToggleWindow() => isWindowOpen = !isWindowOpen;
 
         void OnGUI()
@@ -64,6 +72,11 @@ namespace CelestialBodyMover
                 mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "CelestialBodyMover", GUILayout.Width(200));
                 ClampToScreen(ref mainRect);
             }
+        }
+
+        void Update()
+        {
+            GetThrust();
         }
 
         private void ClampToScreen(ref Rect rect)
@@ -80,7 +93,59 @@ namespace CelestialBodyMover
 
         private void MakeMainWindow(int id)
         {
+            if (GUILayout.Button(isActive ? "Deactivate" : "Activate"))
+            {
+                isActive = !isActive;
+                Log(isActive ? "Activated" : "Deactivated");
+            }
             GUI.DragWindow();
+        }
+
+        private void GetThrust()
+        {
+            if (!isActive) return;
+
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            List<Part> parts = vessel.GetActiveParts();
+
+            // thrust code taken from https://github.com/MuMech/MechJeb2/blob/dev/MechJeb2/VesselState.cs
+            Vector3d thrustCurrent = Vector3d.zero;
+            Vector3d vesselForward = vessel.GetTransform().up;
+
+            //foreach (Part part in parts)
+            for (int i1 = 0; i1 < parts.Count; i1++)
+            {
+                Part part = parts[i1];
+                for (int i2 = 0; i2 < part.Modules.Count; i2++)
+                {
+                    PartModule pm = part.Modules[i2];
+                    if (!pm.isEnabled)
+                    {
+                        continue;
+                    }
+
+                    if (pm is ModuleEngines e)
+                    {
+                        for (int i3 = 0; i3 < e.thrustTransforms.Count; i3++)
+                        {
+                            Transform transform = e.thrustTransforms[i3];
+                            // The rotation makes a +z vector point in the direction that molecules are ejected
+                            // from the engine.  The resulting thrust force is in the opposite direction.
+                            Vector3d thrustDirectionVector = -transform.forward;
+
+                            double cosineLosses = Vector3d.Dot(thrustDirectionVector, vesselForward);
+                            float thrustTransformMultiplier = e.thrustTransformMultipliers[i3];
+                            double tCurrentThrust = e.finalThrust * thrustTransformMultiplier;
+
+                            thrustCurrent += tCurrentThrust * cosineLosses * thrustDirectionVector;
+                        }
+                    }
+                }
+            }
+
+            double thrustCurrentMag = Vector3d.Dot(thrustCurrent, vesselForward);
+
+            Log($"thrustCurrentMag: {thrustCurrentMag}, thrustCurrent: {thrustCurrent}, vesselForward: {vesselForward}");
         }
     }
 }
