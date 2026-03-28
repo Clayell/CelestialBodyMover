@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ToolbarControl_NS;
 using UnityEngine;
 using ClickThroughFix;
+using System.Linq;
 
 namespace CelestialBodyMover
 {
@@ -106,13 +107,12 @@ namespace CelestialBodyMover
             if (!isActive) return;
 
             Vessel vessel = FlightGlobals.ActiveVessel;
-            List<Part> parts = vessel.GetActiveParts();
+            List<Part> parts = vessel.parts.Where(p => p.State == PartStates.ACTIVE).ToList();
 
             // thrust code taken from https://github.com/MuMech/MechJeb2/blob/dev/MechJeb2/VesselState.cs
             Vector3d thrustCurrent = Vector3d.zero;
             Vector3d vesselForward = vessel.GetTransform().up;
 
-            //foreach (Part part in parts)
             for (int i1 = 0; i1 < parts.Count; i1++)
             {
                 Part part = parts[i1];
