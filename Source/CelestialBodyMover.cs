@@ -62,7 +62,15 @@ namespace CelestialBodyMover
                 int id0 = GetHashCode();
 
                 mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "CelestialBodyMover", GUILayout.Width(200));
+                ClampToScreen(ref mainRect);
             }
+        }
+
+        private void ClampToScreen(ref Rect rect)
+        {
+            float left = Mathf.Clamp(rect.x, 0, Screen.width - rect.width);
+            float top = Mathf.Clamp(rect.y, 0, Screen.height - rect.height);
+            rect = new Rect(left, top, rect.width, rect.height);
         }
 
         static void Log(string message, string prefix = "[CelestialBodyMover]")
