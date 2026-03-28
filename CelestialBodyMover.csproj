@@ -41,6 +41,8 @@
     <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll" />
     <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine*.dll" />
     <Reference Include="$(KSPRoot)\GameData\001_ToolbarControl\Plugins\ToolbarControl.dll" />
+	<Reference Include="$(KSPRoot)\GameData\000_ClickThroughBlocker\Plugins\ClickThroughBlocker.dll" />
+	<Reference Include="$(KSPRoot)\GameData\000_Harmony\0Harmony.dll" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyVersion.cs">

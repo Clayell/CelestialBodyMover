@@ -2,20 +2,21 @@
 using System;
 using ToolbarControl_NS;
 using UnityEngine;
+using ClickThroughFix;
 
-namespace CrashMyKSP
+namespace CelestialBodyMover
 {
     [KSPAddon(KSPAddon.Startup.MainMenu, true)] // startup on main menu according to https://github.com/linuxgurugamer/ToolbarControl/wiki/Registration
     public class RegisterToolbar : MonoBehaviour
     {
         void Start()
         {
-            ToolbarControl.RegisterMod("CrashMyKSP", "CrashMyKSP");
+            ToolbarControl.RegisterMod("CBM", "CelestialBodyMover");
         }
     }
 
     [KSPAddon(KSPAddon.Startup.AllGameScenes, false)]
-    public class CrashMyKSP : MonoBehaviour
+    public class CelestialBodyMover : MonoBehaviour
     {
         ToolbarControl toolbarControl = null;
 
@@ -32,11 +33,11 @@ namespace CrashMyKSP
                 toolbarControl = gameObject.AddComponent<ToolbarControl>();
                 toolbarControl.AddToAllToolbars(ToggleWindow, ToggleWindow,
                     ApplicationLauncher.AppScenes.ALWAYS,
-                    "CrashMyKSP",
-                    "CrashMyKSP_Button",
-                    "CrashMyKSP/PluginData/ToolbarIcons/button-64",
-                    "CrashMyKSP/PluginData/ToolbarIcons/button-24",
-                    "CrashMyKSP"
+                    "CelestialBodyMover",
+                    "CelestialBodyMover_Button",
+                    "CelestialBodyMover/PluginData/ToolbarIcons/button-64",
+                    "CelestialBodyMover/PluginData/ToolbarIcons/button-24",
+                    "CelestialBodyMover"
                 );
             }
         }
@@ -60,22 +61,17 @@ namespace CrashMyKSP
                 GUI.skin = skin;
                 int id0 = GetHashCode();
 
-                mainRect = GUILayout.Window(id0, mainRect, MakeMainWindow, "CrashMyKSP", GUILayout.Width(200));
+                mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "CelestialBodyMover", GUILayout.Width(200));
             }
         }
 
-        static void Log(string message, string prefix = "[CrashMyKSP]")
+        static void Log(string message, string prefix = "[CelestialBodyMover]")
         {
             Debug.Log($"{prefix}: {message}");
         }
 
         private void MakeMainWindow(int id)
         {
-            if (GUILayout.Button("Crash KSP!"))
-            {
-                Log($"Crashing KSP.");
-                Application.Quit();
-            }
             GUI.DragWindow();
         }
     }
