@@ -8,4 +8,6 @@
 
 #### Required:
 * ToolbarController
+* ClickThroughBlocker
+* Harmony
 
