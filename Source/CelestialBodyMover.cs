@@ -62,8 +62,8 @@ namespace CelestialBodyMover
                     ApplicationLauncher.AppScenes.ALWAYS,
                     "CelestialBodyMover",
                     "CelestialBodyMover_Button",
-                    "CelestialBodyMover/PluginData/ToolbarIcons/button-64",
-                    "CelestialBodyMover/PluginData/ToolbarIcons/button-24",
+                    "CelestialBodyMover/PluginData/ToolbarIcons/CelestialBodyMover-64",
+                    "CelestialBodyMover/PluginData/ToolbarIcons/CelestialBodyMover-24",
                     "CelestialBodyMover"
                 );
             }
