@@ -44,7 +44,7 @@ namespace CelestialBodyMover
 
         GUISkin skin;
 
-        bool isWindowOpen = false; // hide on first start-up
+        bool isWindowOpen = true;
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
 
         internal static bool isActive = false;
@@ -59,7 +59,7 @@ namespace CelestialBodyMover
             {
                 toolbarControl = gameObject.AddComponent<ToolbarControl>();
                 toolbarControl.AddToAllToolbars(ToggleWindow, ToggleWindow,
-                    ApplicationLauncher.AppScenes.FLIGHT & ApplicationLauncher.AppScenes.SPACECENTER,
+                    ApplicationLauncher.AppScenes.ALWAYS,
                     "CelestialBodyMover",
                     "CelestialBodyMover_Button",
                     "CelestialBodyMover/PluginData/ToolbarIcons/button-64",
@@ -99,7 +99,7 @@ namespace CelestialBodyMover
 
         void OnGUI()
         {
-            if (isWindowOpen)
+            if (isWindowOpen && isKSPGUIActive)
             {
                 GUI.skin = skin;
                 int id0 = GetHashCode();
@@ -111,11 +111,12 @@ namespace CelestialBodyMover
 
         void Update()
         {
-            //GetThrust();
+            GetThrust();
             MakeVesselStationary();
 
             CheatOptions.InfinitePropellant = true;
             CheatOptions.InfiniteElectricity = true;
+            CheatOptions.IgnoreMaxTemperature = true;
             CheatOptions.NoCrashDamage = true;
             CheatOptions.UnbreakableJoints = true;
             CheatOptions.IgnoreEVAConstructionMassLimit = true;
@@ -133,18 +134,20 @@ namespace CelestialBodyMover
         {
             if (HighLogic.LoadedScene == GameScenes.FLIGHT)
             {
-                if (GUILayout.Button(isActive ? "Deactivate" : "Activate"))
+                string buttonText = isActive ? "Unfreeze Craft" : "Freeze Craft";
+                if (GUILayout.Button(buttonText))
                 {
                     isActive = !isActive;
                     if (FlightGlobals.ActiveVessel != null)
                     {
                         Vessel vessel = FlightGlobals.ActiveVessel;
 
-                        currentPos = vessel.GetWorldPos3D();
+                        currentPos = vessel.vesselTransform.position;
+
+                        Util.Log($"currentPos: {currentPos}");
                     }
 
-
-                    Util.Log(isActive ? "Activated" : "Deactivated");
+                    Util.Log(isActive ? "Craft Frozen" : "Craft Unfrozen");
                 }
             }
             else
@@ -153,6 +156,7 @@ namespace CelestialBodyMover
             }
             GUI.DragWindow();
         }
+
         private void MakeVesselStationary()
         {
             Vessel vessel = FlightGlobals.ActiveVessel;
@@ -163,7 +167,7 @@ namespace CelestialBodyMover
             if (isActive)
             {
                 vessel.SetWorldVelocity(Vector3d.zero);
-                vessel.SetPosition(currentPos);
+                vessel.SetPosition(currentPos, true);
             }
         }
 
@@ -172,9 +176,16 @@ namespace CelestialBodyMover
             if (!isActive || HighLogic.LoadedScene != GameScenes.FLIGHT) return;
 
             Vessel vessel = FlightGlobals.ActiveVessel;
+
+            if (vessel.heightFromTerrain >= 10d && vessel.situation != Vessel.Situations.LANDED)
+            {
+                Util.Log($"Altitude too high (vessel.heightFromTerrain: {vessel.heightFromTerrain}, vessel.situation: {vessel.situation})");
+                return;
+            }
+
             Vector3d thrustVector = Vector3d.zero;
-            Vector3d thrustVector2 = Vector3d.zero;
-            Vector3d thrustVector3 = Vector3d.zero;
+            //Vector3d thrustVector2 = Vector3d.zero;
+            //Vector3d thrustVector3 = Vector3d.zero;
 
             Vector3d vesselForward = vessel.GetTransform().up;
 
@@ -196,7 +207,7 @@ namespace CelestialBodyMover
                 {
                     Part part = parts[i1];
 
-                    thrustVector3 += part.force;
+                    //thrustVector3 += part.force;
 
                     for (int i2 = 0; i2 < part.Modules.Count; i2++)
                     {
@@ -219,28 +230,38 @@ namespace CelestialBodyMover
                                 float thrustTransformMultiplier = e.thrustTransformMultipliers[i3];
                                 double tCurrentThrust = e.finalThrust * thrustTransformMultiplier;
                                 Vector3d transformThrust = tCurrentThrust * cosineLosses * thrustDirectionVector;
-                                Vector3d transformThrust2 = tCurrentThrust * cosineLosses * vesselForward;
+                                //Vector3d transformThrust2 = tCurrentThrust * cosineLosses * vesselForward;
 
                                 thrustVector += transformThrust;
-                                thrustVector2 += transformThrust2;
+                                //thrustVector2 += transformThrust2;
 
-                                Util.Log($"transformThrust: {transformThrust}, transformThrust2: {transformThrust2}, thrustVector: {thrustVector}, thrustVector2: {thrustVector2}, thrustDirectionVector: {thrustDirectionVector}, cosineLosses: {cosineLosses}, tCurrentThrust: {tCurrentThrust}");
+                                //Util.Log($"transformThrust: {transformThrust}, transformThrust2: {transformThrust2}, thrustVector: {thrustVector}, thrustVector2: {thrustVector2}, thrustDirectionVector: {thrustDirectionVector}, cosineLosses: {cosineLosses}, tCurrentThrust: {tCurrentThrust}");
                             }
                         }
                     }
 
-                    for (int i2 = 0; i2 < part.forces.Count; i2++)
-                    {
-                        thrustVector3 += part.forces[i2].force;
-                    }
+                    //for (int i2 = 0; i2 < part.forces.Count; i2++)
+                    //{
+                    //    thrustVector3 += part.forces[i2].force;
+                    //}
                 }
+            }
+
+            if (thrustVector == Vector3d.zero)
+            {
+                //Util.Log($"No thrust (thrustVector: {thrustVector})");
+                return;
             }
 
             double currentUT = Planetarium.GetUniversalTime();
 
-            double thrustMagnitude = thrustVector.magnitude;
-            double thrustMagnitude2 = thrustVector2.magnitude;
-            double thrustMagnitude3 = thrustVector3.magnitude;
+            const double epsilon = 1e-3d;
+
+            thrustVector *= 1000d; // convert from kN to N
+
+            //double thrustMagnitude = thrustVector.magnitude;
+            //double thrustMagnitude2 = thrustVector2.magnitude;
+            //double thrustMagnitude3 = thrustVector3.magnitude;
 
             Vector3d thrustNormal = thrustVector.normalized;
 
@@ -250,10 +271,19 @@ namespace CelestialBodyMover
             Vector3d vesselPos = vessel.GetWorldPos3D();
             Vector3d planetPos = body.position;
             Vector3d toPlanet = (planetPos - vesselPos).normalized;
-            double alignment = Vector3d.Dot(thrustNormal, toPlanet);
-            double effectiveThrust = thrustMagnitude * alignment;
-            Vector3d forceOnPlanet = -thrustNormal * effectiveThrust;
-            double totalMass = body.Mass + vessel.totalMass;
+            double alignmentToCenter = Vector3d.Dot(thrustNormal, toPlanet);
+
+            if (alignmentToCenter <= 0d)
+            {
+                //Util.Log($"Thrust not pointing towards planet (alignmentToCenter: {alignmentToCenter})");
+                return;
+            }
+
+            double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
+
+            double effectiveThrust = thrustVector.magnitude * alignmentToCenter;
+            Vector3d forceOnPlanet = thrustNormal * effectiveThrust;
+            double totalMass = body.Mass + vesselMass;
             Vector3d accel = forceOnPlanet / totalMass;
             Vector3d deltaV = accel * Time.fixedDeltaTime;
             Vector3d position = bodyOrbit.getRelativePositionAtUT(currentUT);
@@ -261,29 +291,56 @@ namespace CelestialBodyMover
 
             Vector3d newVelocity = velocity + deltaV;
 
-            Vector3d r = vesselPos - planetPos;
-            Vector3d torque = Vector3d.Cross(r, forceOnPlanet);
-            Vector3d axis = body.angularVelocity.normalized;
-            double torqueAlongAxis = Vector3d.Dot(torque, axis);
-            Vector3d axisTorque = axis * torqueAlongAxis;
+            bodyOrbit.UpdateFromStateVectors(position, newVelocity, bodyOrbit.referenceBody, currentUT);
 
-            double I = (0.4 * body.Mass * body.Radius * body.Radius) + vessel.totalMass * r.magnitude * r.magnitude;
+            if (alignmentToCenter > 1d - epsilon)
+            {
+                Util.Log($"Thrust aligned with planet center, no torque (alignmentToCenter: {alignmentToCenter})");
 
-            double angularAccel = torqueAlongAxis / I;
+                Util.Log($"thrustVector: {thrustVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}");
+                Util.Log($"velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}");
+            }
+            else
+            {
+                Vector3d axis = body.angularVelocity.normalized;
+                double alignmentToAxis = Vector3d.Dot(thrustNormal, axis);
 
-            double dt = Time.fixedDeltaTime;
+                if (1d - Math.Abs(alignmentToAxis) < epsilon)
+                {
+                    Util.Log($"Thrust aligned with planet axis, no torque (alignmentToAxis: {alignmentToAxis})");
 
-            // Update magnitude along axis
-            Vector3d newAngularVelocity = body.angularVelocity + axis * (angularAccel * dt);
-            double omega = newAngularVelocity.magnitude;
-            double newPeriod = (2.0 * Math.PI) / omega;
-            double origPeriod = (2.0 * Math.PI) / body.angularVelocity.magnitude;
+                    Util.Log($"thrustVector: {thrustVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}");
+                    Util.Log($"velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}");
+                }
+                else
+                {
+                    Vector3d radius = vesselPos - planetPos;
+                    Vector3d torque = Vector3d.Cross(radius, thrustVector);
+                    double torqueAlongAxis = Vector3d.Dot(torque, axis);
+
+                    double I = (0.4 * body.Mass * body.Radius * body.Radius) + vesselMass * radius.magnitude * radius.magnitude;
+
+                    double angularAccel = torqueAlongAxis / I;
+
+                    Vector3d newAngularVelocity = body.angularVelocity + axis * (angularAccel * Time.fixedDeltaTime);
+
+                    body.angularVelocity = newAngularVelocity;
+
+                    double newPeriod = (2d * Math.PI) / newAngularVelocity.magnitude;
+                    double origPeriod = (2d * Math.PI) / body.angularVelocity.magnitude;
+
+                    Util.Log($"alignmentToCenter: {alignmentToCenter}, alignmentToAxis: {alignmentToAxis}, torque: {torque}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}, body.angularVelocity: {body.angularVelocity}, newAngularVelocity: {newAngularVelocity}, origPeriod: {origPeriod}, newPeriod: {newPeriod}, angularAccel: {angularAccel}");
+                    Util.Log($"torque: {torque.magnitude}, velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}, body.angularVelocity: {body.angularVelocity.magnitude}, newAngularVelocity: {newAngularVelocity.magnitude}");
+                    Util.Log($"I: {I}, torqueAlongAxis: {torqueAlongAxis}, forceOnPlanet: {forceOnPlanet.magnitude}, torque: {torque.magnitude}, axis: {axis}, body.Radius: {body.Radius}, radius.magnitude: {radius.magnitude}");
+                }
+            }
+
+            Util.Log($"semiMajorAxis: {bodyOrbit.semiMajorAxis}, ApR: {bodyOrbit.ApR}, PeR: {bodyOrbit.PeR}, eccentricity: {bodyOrbit.eccentricity}, inclination: {bodyOrbit.inclination}, LAN: {bodyOrbit.LAN}, AOP: {bodyOrbit.argumentOfPeriapsis}, orbitalEnergy: {bodyOrbit.orbitalEnergy}, orbitalSpeed: {bodyOrbit.orbitalSpeed}");
 
             // need to make sure the vessel is touching the ground (not just splashed)
 
-            Util.Log($"TimeWarp.CurrentRate: {TimeWarp.CurrentRate}, thrustVector: {thrustVector}, thrustVector2: {thrustVector2}, thrustVector3: {thrustVector3}, thrustMagnitude: {thrustMagnitude}, thrustMagnitude2: {thrustMagnitude2}, thrustMagnitude3: {thrustMagnitude3}, bodyPos: {body.position}, bodyAngVel: {body.angularVelocity}, body.zUpAngularVelocity: {body.zUpAngularVelocity}, rotationPeriod: {body.rotationPeriod}, solarDayLength: {body.solarDayLength}, rotation: {body.rotation}, rotationAngle: {body.rotationAngle}, referenceBody: {bodyOrbit.referenceBody.bodyName}, GetRelativeVel: {bodyOrbit.GetRelativeVel()}, orbitalSpeed: {bodyOrbit.orbitalSpeed}, GetFrameVel().magnitude: {bodyOrbit.GetFrameVel().magnitude}, transformRight: {body.transformRight}, transformUp: {body.transformUp}");
-            Util.Log($"thrustVector.normalized: {thrustVector.normalized} vesselForward: {vesselForward} dot: {Vector3d.Dot(thrustVector.normalized, vesselForward)}, vesselPos: {vesselPos}, planetPos: {planetPos}, toPlanet: {toPlanet}, alignment: {alignment}");
-            Util.Log($"velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, origPeriod: {origPeriod}, newPeriod: {newPeriod}");
+            //Util.Log($"TimeWarp.CurrentRate: {TimeWarp.CurrentRate}, thrustVector: {thrustVector}, thrustVector2: {thrustVector2}, thrustVector3: {thrustVector3}, thrustMagnitude: {thrustMagnitude}, thrustMagnitude2: {thrustMagnitude2}, thrustMagnitude3: {thrustMagnitude3}, bodyPos: {body.position}, bodyAngVel: {body.angularVelocity}, body.zUpAngularVelocity: {body.zUpAngularVelocity}, rotationPeriod: {body.rotationPeriod}, solarDayLength: {body.solarDayLength}, rotation: {body.rotation}, rotationAngle: {body.rotationAngle}, referenceBody: {bodyOrbit.referenceBody.bodyName}, GetRelativeVel: {bodyOrbit.GetRelativeVel()}, orbitalSpeed: {bodyOrbit.orbitalSpeed}, GetFrameVel().magnitude: {bodyOrbit.GetFrameVel().magnitude}, transformRight: {body.transformRight}, transformUp: {body.transformUp}");
+            //Util.Log($"thrustVector.normalized: {thrustVector.normalized} vesselForward: {vesselForward} dot: {Vector3d.Dot(thrustVector.normalized, vesselForward)}, vesselPos: {vesselPos}, planetPos: {planetPos}, toPlanet: {toPlanet}, alignmentToCenter: {alignmentToCenter}");
         }
     }
 
