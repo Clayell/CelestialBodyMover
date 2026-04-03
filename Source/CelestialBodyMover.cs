@@ -4,6 +4,7 @@ using HarmonyLib;
 using KSP.UI.Screens;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using ToolbarControl_NS;
 using UnityEngine;
@@ -37,14 +38,18 @@ namespace CelestialBodyMover
         }
     }
 
-    [KSPAddon(KSPAddon.Startup.AllGameScenes, false)]
-    public class CelestialBodyMover : MonoBehaviour
+    //[KSPAddon(KSPAddon.Startup.AllGameScenes, true)]
+    [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
+    public class CelestialBodyMover : ScenarioModule
+    //public class CelestialBodyMover : MonoBehaviour
     {
         ToolbarControl toolbarControl = null;
 
         GUISkin skin;
 
+        [KSPField(isPersistant = true)]
         bool isWindowOpen = true;
+
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
 
         internal static bool isActive = false;
@@ -52,6 +57,11 @@ namespace CelestialBodyMover
         Vector3d currentPos = Vector3d.zero;
 
         Rect mainRect = new Rect(100, 100, -1, -1);
+
+        //ScenarioModule scenarioRoot = new ScenarioModule();
+        //ConfigNode root = new ConfigNode();
+
+        static string SettingsFolder;
 
         private void InitToolbar()
         {
@@ -79,7 +89,23 @@ namespace CelestialBodyMover
 
         void Start()
         {
+            DontDestroyOnLoad(this); // we only want to load the saved orbits once
+
             InitToolbar();
+
+            SettingsFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
+
+            string originalSavePath = Path.Combine(SettingsFolder, "originalOrbits.cfg");
+            if (!File.Exists(originalSavePath))
+            {
+                SaveOrbitDetails(originalSavePath);
+            }
+
+            string savePath = Path.Combine(SettingsFolder, "savedOrbits.cfg");
+            if (File.Exists(savePath))
+            {
+                LoadOrbitDetails(savePath);
+            }
         }
 
         void OnDestroy()
@@ -89,6 +115,8 @@ namespace CelestialBodyMover
 
             GameEvents.onShowUI.Remove(KSPShowGUI);
             GameEvents.onHideUI.Remove(KSPHideGUI);
+
+            SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
         }
 
         private void ToggleWindow() => isWindowOpen = !isWindowOpen;
@@ -154,7 +182,88 @@ namespace CelestialBodyMover
             {
                 GUILayout.Label("Not flight scene!");
             }
+
+            GUILayout.Space(10);
+
+            if (GUILayout.Button("Reset All Orbits"))
+            {
+                LoadOrbitDetails(Path.Combine(SettingsFolder, "originalOrbits.cfg"));
+            }
+
+            GUILayout.Space(10);
+
+            if (GUILayout.Button("TEST"))
+            {
+                CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                Orbit orbit = testBody.orbit;
+                orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, testBody.orbit.referenceBody);
+                SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
+            }
+
             GUI.DragWindow();
+        }
+
+        private void SaveOrbitDetails(string savePath)
+        {
+            Util.Log($"Clearing {savePath}...");
+            File.WriteAllText(savePath, "");
+
+            ConfigNode root = new ConfigNode();
+            ConfigNode orbits = root.AddNode("ORBITS");
+            orbits?.AddValue("numBodies", FlightGlobals.Bodies?.Count);
+            orbits?.AddValue("UT", Planetarium.GetUniversalTime());
+            Util.Log($"UT: {Planetarium.GetUniversalTime()}");
+
+            for (int i = 0; i < FlightGlobals.Bodies?.Count; i++)
+            {
+                CelestialBody body = FlightGlobals.Bodies[i];
+                Orbit orbit = body?.orbit;
+
+                if (orbit == null)
+                {
+                    continue;
+                }
+
+                ConfigNode bodyNode = orbits?.AddNode(body?.name);
+                
+                bodyNode?.AddValue("pos", orbit.pos);
+                bodyNode?.AddValue("vel", orbit.vel);
+                Util.Log($"orbit.epoch {orbit.epoch} for {body.name}");
+            }
+
+            root?.Save(savePath);
+            Util.Log($"Saved orbits to {savePath}");
+
+            //scenarioRoot.Save(root);
+        }
+
+        private void LoadOrbitDetails(string savePath)
+        {
+            //root = ConfigNode.Load(savePath);
+            ConfigNode root = ConfigNode.Load(savePath);
+            //scenarioRoot.Load(root);
+            ConfigNode orbits = root.GetNode("ORBITS");
+            if (!int.TryParse(orbits.GetValue("numBodies"), out int numBodies)) { Util.LogError($"Failed to parse numBodies from {savePath}"); return; }
+            if (!double.TryParse(orbits.GetValue("UT"), out double UT)) { Util.LogError($"Failed to parse UT from {savePath}"); return; }
+
+            if (numBodies != FlightGlobals.Bodies.Count) { Util.LogError($"numBodies ({numBodies}) does not match bodies count ({FlightGlobals.Bodies.Count})"); return; }
+
+            for (int i = 0; i < numBodies; i++)
+            {
+                CelestialBody body = FlightGlobals.Bodies[i];
+                ConfigNode bodyNode = orbits.GetNode(body.name);
+                if (bodyNode == null)
+                {
+                    Util.LogError($"Failed to find node for body {body.name} in {savePath}");
+                    continue;
+                }
+                Vector3d pos = ConfigNode.ParseVector3D(bodyNode.GetValue("pos"));
+                Vector3d vel = ConfigNode.ParseVector3D(bodyNode.GetValue("vel"));
+                if (pos == Vector3d.zero || vel == Vector3d.zero) { Util.LogError($"Failed to parse pos ({pos}) or vel ({vel}) from {savePath} for body {body.name}"); continue; }
+                body.orbit.UpdateFromStateVectors(pos, vel, body.orbit.referenceBody, UT);
+            }
+
+            Util.Log($"Loaded orbits from {savePath}");
         }
 
         private void MakeVesselStationary()
@@ -181,6 +290,13 @@ namespace CelestialBodyMover
             {
                 Util.Log($"Altitude too high (vessel.heightFromTerrain: {vessel.heightFromTerrain}, vessel.situation: {vessel.situation})");
                 return;
+            }
+
+            CelestialBody body = vessel.mainBody;
+
+            if (body.isStar || body.name == "Sun")
+            {
+                Util.Log($"Body is a star (bodyName: {body.name})");
             }
 
             Vector3d thrustVector = Vector3d.zero;
@@ -264,8 +380,6 @@ namespace CelestialBodyMover
             //double thrustMagnitude3 = thrustVector3.magnitude;
 
             Vector3d thrustNormal = thrustVector.normalized;
-
-            CelestialBody body = vessel.mainBody;
 
             Orbit bodyOrbit = body.orbit;
             Vector3d vesselPos = vessel.GetWorldPos3D();
