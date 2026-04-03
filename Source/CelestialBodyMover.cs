@@ -38,19 +38,20 @@ namespace CelestialBodyMover
         }
     }
 
-    //[KSPAddon(KSPAddon.Startup.AllGameScenes, true)]
-    [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
-    public class CelestialBodyMover : ScenarioModule
-    //public class CelestialBodyMover : MonoBehaviour
+    [KSPAddon(KSPAddon.Startup.AllGameScenes, true)]
+    //[KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
+    //public class CelestialBodyMover : ScenarioModule
+    public class CelestialBodyMover : MonoBehaviour
     {
         ToolbarControl toolbarControl = null;
 
         GUISkin skin;
 
-        [KSPField(isPersistant = true)]
+        //[KSPField(isPersistant = true)]
         bool isWindowOpen = true;
-
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
+        bool isLoading = false;
+        bool isBadUI = false;
 
         internal static bool isActive = false;
 
@@ -69,7 +70,7 @@ namespace CelestialBodyMover
             {
                 toolbarControl = gameObject.AddComponent<ToolbarControl>();
                 toolbarControl.AddToAllToolbars(ToggleWindow, ToggleWindow,
-                    ApplicationLauncher.AppScenes.ALWAYS,
+                    ApplicationLauncher.AppScenes.FLIGHT & ApplicationLauncher.AppScenes.MAPVIEW & ApplicationLauncher.AppScenes.SPACECENTER & ApplicationLauncher.AppScenes.TRACKSTATION,
                     "CelestialBodyMover",
                     "CelestialBodyMover_Button",
                     "CelestialBodyMover/PluginData/ToolbarIcons/CelestialBodyMover-64",
@@ -85,6 +86,16 @@ namespace CelestialBodyMover
 
             GameEvents.onShowUI.Add(KSPShowGUI);
             GameEvents.onHideUI.Add(KSPHideGUI);
+
+            GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
+            GameEvents.onLevelWasLoadedGUIReady.Add(OnSceneLoaded);
+
+            GameEvents.onGUIAstronautComplexSpawn.Add(HideBadUI);
+            GameEvents.onGUIRnDComplexSpawn.Add(HideBadUI);
+            GameEvents.onGUIAdministrationFacilitySpawn.Add(HideBadUI);
+            GameEvents.onGUIAstronautComplexDespawn.Add(ShowBadUI);
+            GameEvents.onGUIRnDComplexDespawn.Add(ShowBadUI);
+            GameEvents.onGUIAdministrationFacilityDespawn.Add(ShowBadUI);
         }
 
         void Start()
@@ -106,6 +117,8 @@ namespace CelestialBodyMover
             {
                 LoadOrbitDetails(savePath);
             }
+
+            LoadSettings();
         }
 
         void OnDestroy()
@@ -116,6 +129,17 @@ namespace CelestialBodyMover
             GameEvents.onShowUI.Remove(KSPShowGUI);
             GameEvents.onHideUI.Remove(KSPHideGUI);
 
+            GameEvents.onGameSceneLoadRequested.Remove(OnSceneChange);
+            GameEvents.onLevelWasLoadedGUIReady.Remove(OnSceneLoaded);
+
+            GameEvents.onGUIAstronautComplexSpawn.Remove(HideBadUI);
+            GameEvents.onGUIRnDComplexSpawn.Remove(HideBadUI);
+            GameEvents.onGUIAdministrationFacilitySpawn.Remove(HideBadUI);
+            GameEvents.onGUIAstronautComplexDespawn.Remove(ShowBadUI);
+            GameEvents.onGUIRnDComplexDespawn.Remove(ShowBadUI);
+            GameEvents.onGUIAdministrationFacilityDespawn.Remove(ShowBadUI);
+
+            SaveSettings();
             SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
         }
 
@@ -125,9 +149,17 @@ namespace CelestialBodyMover
 
         private void KSPHideGUI() => isKSPGUIActive = false;
 
+        private void HideBadUI() => isBadUI = true;
+
+        private void ShowBadUI() => isBadUI = false;
+
+        private void OnSceneLoaded(GameScenes s) => isLoading = false;
+
+        private void OnSceneChange(GameScenes s) => isLoading = true;
+
         void OnGUI()
         {
-            if (isWindowOpen && isKSPGUIActive)
+            if (isWindowOpen && isKSPGUIActive && !isLoading && !isBadUI)
             {
                 GUI.skin = skin;
                 int id0 = GetHashCode();
@@ -241,10 +273,28 @@ namespace CelestialBodyMover
         {
             //root = ConfigNode.Load(savePath);
             ConfigNode root = ConfigNode.Load(savePath);
+            if (root == null)
+            {
+                Util.LogError($"Failed to load ROOT node from {savePath}");
+                return;
+            }
             //scenarioRoot.Load(root);
             ConfigNode orbits = root.GetNode("ORBITS");
-            if (!int.TryParse(orbits.GetValue("numBodies"), out int numBodies)) { Util.LogError($"Failed to parse numBodies from {savePath}"); return; }
-            if (!double.TryParse(orbits.GetValue("UT"), out double UT)) { Util.LogError($"Failed to parse UT from {savePath}"); return; }
+            if (orbits == null)
+            {
+                Util.LogError($"Failed to find ORBITS node in {savePath}");
+                return;
+            }
+            if (!int.TryParse(orbits.GetValue("numBodies"), out int numBodies))
+            {
+                Util.LogError($"Failed to parse numBodies from {savePath}"); 
+                return;
+            }
+            if (!double.TryParse(orbits.GetValue("UT"), out double UT))
+            {
+                Util.LogError($"Failed to parse UT from {savePath}");
+                return;
+            }
 
             if (numBodies != FlightGlobals.Bodies.Count) { Util.LogError($"numBodies ({numBodies}) does not match bodies count ({FlightGlobals.Bodies.Count})"); return; }
 
@@ -264,6 +314,53 @@ namespace CelestialBodyMover
             }
 
             Util.Log($"Loaded orbits from {savePath}");
+        }
+
+        private void SaveSettings()
+        {
+            string savePath = Path.Combine(SettingsFolder, "settings.cfg");
+            Util.Log($"Clearing {savePath}...");
+            File.WriteAllText(savePath, "");
+
+            ConfigNode root = new ConfigNode();
+            if (root == null)
+            {
+                Util.LogError($"Failed to create ROOT node in {savePath}");
+                return;
+            }
+            ConfigNode settings = root.AddNode("SETTINGS");
+            if (settings == null)
+            {
+                Util.LogError($"Failed to create SETTINGS node in {savePath}");
+                return;
+            }
+
+            settings.AddValue("isWindowOpen", isWindowOpen);
+
+            root.Save(savePath);
+            Util.Log($"Saved settings to {savePath}");
+        }
+
+        private void LoadSettings()
+        {
+            string savePath = Path.Combine(SettingsFolder, "settings.cfg");
+
+            ConfigNode root = ConfigNode.Load(savePath);
+            if (root == null)
+            {
+                Util.LogError($"Failed to load ROOT node from {savePath}");
+                return;
+            }
+            ConfigNode settings = root.GetNode("SETTINGS");
+            if (settings == null)
+            {
+                Util.LogError($"Failed to find SETTINGS node in {savePath}");
+                return;
+            }
+
+            settings.TryGetValue("isWindowOpen", ref isWindowOpen);
+
+            Util.Log($"Loaded settings from {savePath}");
         }
 
         private void MakeVesselStationary()
