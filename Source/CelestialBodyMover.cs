@@ -231,7 +231,8 @@ namespace CelestialBodyMover
                 //bodyNode.AddValue("referenceBody", orbit.referenceBody);
 
                 bodyNode.AddValue("rotationPeriod", body.rotationPeriod);
-                Util.Log($"Saved orbit for body {body.name}: pos: {orbit.pos}, vel: {orbit.vel}, epoch: {orbit.epoch}, rotationPeriod: {body.rotationPeriod} (solarDayLength: {body.solarDayLength})");
+                bodyNode.AddValue("initialRotation", body.initialRotation);
+                Util.Log($"Saved orbit for body {body.name}: pos: {orbit.pos}, vel: {orbit.vel}, epoch: {orbit.epoch}, rotationPeriod: {body.rotationPeriod} (solarDayLength: {body.solarDayLength}), initialRotation: {body.initialRotation}");
             }
 
             root?.Save(savePath);
@@ -309,11 +310,17 @@ namespace CelestialBodyMover
 
                 if (!double.TryParse(bodyNode.GetValue("rotationPeriod"), out double rotationPeriod))
                 {
-                    Util.LogError($"Failed to parse epoch for body {body.name} in {savePath}");
+                    Util.LogError($"Failed to parse rotationPeriod for body {body.name} in {savePath}");
                     continue;
                 }
                 body.rotationPeriod = rotationPeriod;
-                Util.Log($"Loading orbit for body {body.name}: pos: {pos}, vel: {vel}, epoch: {epoch}, rotationPeriod: {rotationPeriod}");
+                if (!double.TryParse(bodyNode.GetValue("initialRotation"), out double initialRotation))
+                {
+                    Util.LogError($"Failed to parse initialRotation for body {body.name} in {savePath}");
+                    continue;
+                }
+                body.initialRotation = initialRotation;
+                Util.Log($"Loading orbit for body {body.name}: pos: {pos}, vel: {vel}, epoch: {epoch}, rotationPeriod: {rotationPeriod}, initialRotation: {initialRotation}");
 
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
@@ -673,10 +680,10 @@ namespace CelestialBodyMover
 
                     Vector3d newAngularVelocity = body.angularVelocity + axis * (angularAccel * Time.fixedDeltaTime);
 
-                    body.angularVelocity = newAngularVelocity;
-
                     double newPeriod = (2d * Math.PI) / newAngularVelocity.magnitude;
                     double origPeriod = (2d * Math.PI) / body.angularVelocity.magnitude;
+                    body.rotationPeriod = newPeriod; // angular velocity is set by rotation period in CBUpdate
+                    body.initialRotation = (body.rotationAngle - 360d * (1d / newPeriod) * currentUT) % 360d; // work backwards from rotationAngle = (initialRotation + 360.0 * rotPeriodRecip * Planetarium.GetUniversalTime()) % 360.0;
 
                     Util.Log($"alignmentToCenter: {alignmentToCenter}, alignmentToAxis: {alignmentToAxis}, torque: {torque}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}, body.angularVelocity: {body.angularVelocity}, newAngularVelocity: {newAngularVelocity}, origPeriod: {origPeriod}, newPeriod: {newPeriod}, angularAccel: {angularAccel}");
                     Util.Log($"torque: {torque.magnitude}, velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}, body.angularVelocity: {body.angularVelocity.magnitude}, newAngularVelocity: {newAngularVelocity.magnitude}");
