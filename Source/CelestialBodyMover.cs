@@ -84,6 +84,7 @@ namespace CelestialBodyMover
         }
 
         void Awake()
+        //public override void OnAwake() // scenariomodule stuff needs to run before we call our Awake stuff 
         {
             Util.Log("Awake called");
 
@@ -494,6 +495,7 @@ namespace CelestialBodyMover
             {
                 CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
                 testBody.rotationPeriod = 12345d;
+                testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
                 SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
             }
 
