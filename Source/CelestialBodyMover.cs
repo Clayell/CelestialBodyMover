@@ -38,29 +38,34 @@ namespace CelestialBodyMover
         }
     }
 
-    //[KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
-    //public class CelestialBodyMover : ScenarioModule
-    [KSPAddon(KSPAddon.Startup.AllGameScenes, true)]
-    public class CelestialBodyMover : MonoBehaviour
+    [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
+    public class CelestialBodyMover : ScenarioModule
+    //[KSPAddon(KSPAddon.Startup.AllGameScenes, true)]
+    //public class CelestialBodyMover : MonoBehaviour
     {
         ToolbarControl toolbarControl = null;
 
         GUISkin skin;
 
-        //[KSPField(isPersistant = true)]
+        [KSPField(isPersistant = true)]
         bool isWindowOpen = false;
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
         bool isLoading = false;
         bool isBadUI = false;
 
         //bool? firstLoad = null;
+        [KSPField(isPersistant = true)]
         bool firstLoad = true;
+        [KSPField(isPersistant = true)]
         bool debugMode = true;
-        internal static bool isActive = false;
+
+        internal static bool isActive = false; // this should be false by default, even after loading
 
         Vector3d currentPos = Vector3d.zero;
 
         Rect mainRect = new Rect(100, 100, -1, -1);
+        [KSPField(isPersistant = true)]
+        Vector2 mainRectPos = Vector2.zero;
 
         //ScenarioModule scenarioRoot = new ScenarioModule();
         //ConfigNode root = new ConfigNode();
@@ -83,8 +88,8 @@ namespace CelestialBodyMover
             }
         }
 
-        void Awake()
-        //public override void OnAwake() // scenariomodule stuff needs to run before we call our Awake stuff 
+        //void Awake()
+        public override void OnAwake() // scenariomodule stuff needs to run before we call our Awake stuff 
         {
             Util.Log("Awake called");
 
@@ -108,16 +113,11 @@ namespace CelestialBodyMover
         {
             Util.Log("Start called");
 
-            DontDestroyOnLoad(this); // we only want to load the saved orbits once
+            DontDestroyOnLoad(this); // we only want to load the saved orbits once (apparently this is already called when using KSPAddon once = true?
 
             InitToolbar();
 
             SettingsFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
-
-            string savePath = Path.Combine(SettingsFolder, "savedOrbits.cfg");
-            LoadOrbitDetails(savePath);
-
-            LoadSettings();
         }
 
         void OnDestroy()
@@ -139,9 +139,6 @@ namespace CelestialBodyMover
             GameEvents.onGUIAstronautComplexDespawn.Remove(ShowBadUI);
             GameEvents.onGUIRnDComplexDespawn.Remove(ShowBadUI);
             GameEvents.onGUIAdministrationFacilityDespawn.Remove(ShowBadUI);
-
-            SaveSettings();
-            SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
         }
 
         private void ToggleWindow() => isWindowOpen = !isWindowOpen;
@@ -167,25 +164,39 @@ namespace CelestialBodyMover
             Util.Log($"Scene changing to {s}");
 
             isLoading = true;
-
-            SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
         }
 
-        private void SaveOrbitDetails(string savePath)
+        public override void OnSave(ConfigNode root)
         {
-            Util.Log($"Saving to {savePath}...");
+            SaveOrbitDetails(ref root, "savedOrbits");
+        }
+
+        public override void OnLoad(ConfigNode root)
+        {
+            LoadOrbitDetails(root, "savedOrbits");
+
+            mainRect = new Rect(mainRectPos.x, mainRectPos.y, mainRect.width, mainRect.height);
+        }
+
+        private void SaveOrbitDetails(string saveFile)
+        {
+            ConfigNode root = new ConfigNode();
+            string savePath = Path.Combine(SettingsFolder, saveFile);
             File.WriteAllText(savePath, "");
 
-            ConfigNode root = new ConfigNode();
-            if (root == null)
-            {
-                Util.LogError($"Failed to create ROOT node in {savePath}");
-                return;
-            }
-            ConfigNode orbits = root.AddNode("ORBITS");
+            SaveOrbitDetails(ref root, Path.GetFileNameWithoutExtension(savePath));
+
+            root.Save(savePath);
+        }
+
+        private void SaveOrbitDetails(ref ConfigNode root, string saveNode)
+        {
+            Util.Log($"Saving {saveNode}...");
+
+            ConfigNode orbits = root.AddNode(saveNode);
             if (orbits == null)
             {
-                Util.LogError($"Failed to create ORBITS node in {savePath}");
+                Util.LogError($"Failed to create ORBITS node in {saveNode}");
                 return;
             }
 
@@ -235,15 +246,14 @@ namespace CelestialBodyMover
                 bodyNode.AddValue("initialRotation", body.initialRotation);
                 Util.Log($"Saved orbit for body {body.name}: pos: {orbit.pos}, vel: {orbit.vel}, epoch: {orbit.epoch}, rotationPeriod: {body.rotationPeriod} (solarDayLength: {body.solarDayLength}), initialRotation: {body.initialRotation}");
             }
+            Util.Log($"Saved orbits for {saveNode}");
 
-            root?.Save(savePath);
-            Util.Log($"Saved orbits to {savePath}");
-
-            //scenarioRoot.Save(root);
+            return;
         }
 
-        private void LoadOrbitDetails(string savePath)
+        private void LoadOrbitDetails(string saveFile)
         {
+            string savePath = Path.Combine(SettingsFolder, saveFile);
             Util.Log($"Loading orbits from {savePath}...");
 
             if (!File.Exists(savePath))
@@ -251,29 +261,29 @@ namespace CelestialBodyMover
                 Util.LogError($"File {savePath} does not exist");
                 return;
             }
-            
-            //root = ConfigNode.Load(savePath);
+
             ConfigNode root = ConfigNode.Load(savePath);
-            if (root == null)
-            {
-                Util.LogError($"Failed to load ROOT node from {savePath}");
-                return;
-            }
-            //scenarioRoot.Load(root);
-            ConfigNode orbits = root.GetNode("ORBITS");
+            LoadOrbitDetails(root, Path.GetFileNameWithoutExtension(savePath));
+        }
+
+        private void LoadOrbitDetails(ConfigNode root, string saveNode)
+        {
+            Util.Log($"Loading orbits from {saveNode}...");
+
+            ConfigNode orbits = root.GetNode(saveNode);
             if (orbits == null)
             {
-                Util.LogError($"Failed to find ORBITS node in {savePath}");
+                Util.LogError($"Failed to find ORBITS node in {root}");
                 return;
             }
             if (!int.TryParse(orbits.GetValue("numBodies"), out int numBodies))
             {
-                Util.LogError($"Failed to parse numBodies from {savePath}");
+                Util.LogError($"Failed to parse numBodies from {root}");
                 return;
             }
             if (!double.TryParse(orbits.GetValue("UT"), out double UT))
             {
-                Util.LogError($"Failed to parse UT from {savePath}");
+                Util.LogError($"Failed to parse UT from {root}");
                 return;
             }
 
@@ -296,28 +306,28 @@ namespace CelestialBodyMover
                 ConfigNode bodyNode = orbits.GetNode(body.name);
                 if (bodyNode == null)
                 {
-                    Util.LogError($"Failed to find node for body {body.name} in {savePath}");
+                    Util.LogError($"Failed to find node for body {body.name} in {root}");
                     continue;
                 }
                 Vector3d pos = ConfigNode.ParseVector3D(bodyNode.GetValue("pos"));
                 Vector3d vel = ConfigNode.ParseVector3D(bodyNode.GetValue("vel"));
-                if (pos == Vector3d.zero || vel == Vector3d.zero) { Util.LogError($"Failed to parse pos ({pos}) or vel ({vel}) from {savePath} for body {body.name}"); continue; }
+                if (pos == Vector3d.zero || vel == Vector3d.zero) { Util.LogError($"Failed to parse pos ({pos}) or vel ({vel}) from {root} for body {body.name}"); continue; }
                 if (!double.TryParse(bodyNode.GetValue("epoch"), out double epoch))
                 {
-                    Util.LogError($"Failed to parse epoch for body {body.name} in {savePath}");
+                    Util.LogError($"Failed to parse epoch for body {body.name} in {root}");
                     continue;
                 }
                 body.orbit.UpdateFromStateVectors(pos, vel, body.orbit.referenceBody, epoch);
 
                 if (!double.TryParse(bodyNode.GetValue("rotationPeriod"), out double rotationPeriod))
                 {
-                    Util.LogError($"Failed to parse rotationPeriod for body {body.name} in {savePath}");
+                    Util.LogError($"Failed to parse rotationPeriod for body {body.name} in {root}");
                     continue;
                 }
                 body.rotationPeriod = rotationPeriod;
                 if (!double.TryParse(bodyNode.GetValue("initialRotation"), out double initialRotation))
                 {
-                    Util.LogError($"Failed to parse initialRotation for body {body.name} in {savePath}");
+                    Util.LogError($"Failed to parse initialRotation for body {body.name} in {root}");
                     continue;
                 }
                 body.initialRotation = initialRotation;
@@ -326,76 +336,7 @@ namespace CelestialBodyMover
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
 
-            Util.Log($"Loaded orbits from {savePath}");
-        }
-
-        private void SaveSettings()
-        {
-            string savePath = Path.Combine(SettingsFolder, "settings.cfg");
-            Util.Log($"Saving to {savePath}...");
-            File.WriteAllText(savePath, "");
-
-            ConfigNode root = new ConfigNode();
-            if (root == null)
-            {
-                Util.LogError($"Failed to create ROOT node in {savePath}");
-                return;
-            }
-            ConfigNode settings = root.AddNode("SETTINGS");
-            if (settings == null)
-            {
-                Util.LogError($"Failed to create SETTINGS node in {savePath}");
-                return;
-            }
-            //settings.AddValue("", );
-            settings.AddValue("isWindowOpen", isWindowOpen);
-            settings.AddValue("firstLoad", firstLoad);
-            settings.AddValue("mainRect.xMin", mainRect.xMin);
-            settings.AddValue("mainRect.yMin", mainRect.yMin);
-            settings.AddValue("debugMode", debugMode);
-
-            root.Save(savePath);
-            Util.Log($"Saved settings to {savePath}");
-        }
-
-        private void LoadSettings()
-        {
-            string savePath = Path.Combine(SettingsFolder, "settings.cfg");
-            Util.Log($"Loading settings from {savePath}...");
-            if (!File.Exists(savePath))
-            {
-                Util.LogError($"File {savePath} does not exist");
-                return;
-            }
-
-            ConfigNode root = ConfigNode.Load(savePath);
-            if (root == null)
-            {
-                Util.LogError($"Failed to load ROOT node from {savePath}");
-                return;
-            }
-            ConfigNode settings = root.GetNode("SETTINGS");
-            if (settings == null)
-            {
-                Util.LogError($"Failed to find SETTINGS node in {savePath}");
-                return;
-            }
-
-            float x1 = mainRect.xMin;
-            float y1 = mainRect.yMin;
-            //bool firstLoadLocal = true;
-
-            settings.TryGetValue("isWindowOpen", ref isWindowOpen);
-            //settings.TryGetValue("firstLoad", ref firstLoadLocal);
-            settings.TryGetValue("firstLoad", ref firstLoad);
-            settings.TryGetValue("mainRect.xMin", ref x1);
-            settings.TryGetValue("mainRect.yMin", ref y1);
-            settings.TryGetValue("debugMode", ref debugMode);
-
-            mainRect = new Rect(x1, y1, mainRect.width, mainRect.height);
-            //firstLoad = firstLoadLocal;
-
-            Util.Log($"Loaded settings from {savePath}");
+            Util.Log($"Loaded orbits from {saveNode}");
         }
 
         void OnGUI()
@@ -407,12 +348,14 @@ namespace CelestialBodyMover
 
                 mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "Celestial Body Mover", GUILayout.Width(200));
                 ClampToScreen(ref mainRect);
+
+                mainRectPos.x = mainRect.xMin;
+                mainRectPos.y = mainRect.yMin;
             }
         }
 
         void Update()
         {
-            string originalSavePath = Path.Combine(SettingsFolder, "originalOrbits.cfg");
             //if (firstLoad.HasValue && firstLoad.Value) // only want this to run on the 2nd frame, after the epochs are loaded
             //{
             //    SaveOrbitDetails(originalSavePath);
@@ -425,7 +368,7 @@ namespace CelestialBodyMover
             //}
             if (firstLoad)
             {
-                SaveOrbitDetails(originalSavePath);
+                SaveOrbitDetails("originalOrbits.cfg");
 
                 firstLoad = false;
             }
@@ -488,7 +431,6 @@ namespace CelestialBodyMover
                 CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
                 Orbit orbit = testBody.orbit;
                 orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, testBody.orbit.referenceBody);
-                SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
             }
 
             if (GUILayout.Button("TESTROTATION"))
@@ -496,12 +438,6 @@ namespace CelestialBodyMover
                 CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
                 testBody.rotationPeriod = 12345d;
                 testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
-                SaveOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
-            }
-
-            if (GUILayout.Button("TESTLOAD"))
-            {
-                LoadOrbitDetails(Path.Combine(SettingsFolder, "savedOrbits.cfg"));
             }
 
             GUI.DragWindow();
