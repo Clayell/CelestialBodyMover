@@ -237,6 +237,8 @@ namespace CelestialBodyMover
                     log += $"{name}: {value}, ";
                 }
 
+                FixParabolic(ref orbit);
+
                 AddValue("inclination", orbit.inclination);
                 AddValue("eccentricity", orbit.eccentricity);
                 AddValue("semiMajorAxis", orbit.semiMajorAxis);
@@ -348,7 +350,8 @@ namespace CelestialBodyMover
 
                 bodyOrbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomalyAtEpoch, epoch, referenceBody); // calls Init()
 
-                bodyOrbit.meanAnomaly = (bodyOrbit.meanAnomalyAtEpoch + (UT - bodyOrbit.epoch) * tau / bodyOrbit.period) % tau; // Init() just sets meanAnomaly to meanAnomalyAtEpoch, so we need to fix it
+                double meanMotion = Math.Sqrt(body.gravParameter / Math.Pow(Math.Abs(semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits. guaranteed to be defined as we removed parabolic orbits when saving
+                bodyOrbit.meanAnomaly = (bodyOrbit.meanAnomalyAtEpoch + meanMotion * (UT - epoch)) % tau; // Init() just sets meanAnomaly to meanAnomalyAtEpoch, so we need to fix it
 
                 body.rotationPeriod = rotationPeriod;
                 body.initialRotation = initialRotation;
@@ -358,6 +361,15 @@ namespace CelestialBodyMover
             }
 
             Util.Log($"Loaded orbits from {saveNode}");
+        }
+
+        void FixParabolic(ref Orbit orbit)
+        {
+            if (orbit.eccentricity == 1d)
+            {
+                orbit.eccentricity = 1d - 1e-9; // decrease parabolic orbits to be highly eccentric
+            }
+            orbit.semiMajorAxis = -orbit.referenceBody.gravParameter / (2d * orbit.orbitalEnergy); // we need to use this definition because only orbitalEnergy is actually recalculated in UpdateFromFixedVectors
         }
 
         void OnGUI()
@@ -582,7 +594,7 @@ namespace CelestialBodyMover
 
             Vector3d thrustNormal = thrustVector.normalized;
 
-            Orbit bodyOrbit = body.orbit;
+            Orbit orbit = body.orbit;
             Vector3d vesselPos = vessel.GetWorldPos3D();
             Vector3d planetPos = body.position;
             Vector3d toPlanet = (planetPos - vesselPos).normalized;
@@ -601,14 +613,17 @@ namespace CelestialBodyMover
             double totalMass = body.Mass + vesselMass;
             Vector3d accel = forceOnPlanet / totalMass;
             Vector3d deltaV = accel * Time.fixedDeltaTime;
-            Vector3d position = bodyOrbit.getRelativePositionAtUT(currentUT);
-            Vector3d velocity = bodyOrbit.getOrbitalVelocityAtUT(currentUT);
+            Vector3d position = orbit.getRelativePositionAtUT(currentUT);
+            Vector3d velocity = orbit.getOrbitalVelocityAtUT(currentUT);
 
             Vector3d newVelocity = velocity + deltaV;
 
-            bodyOrbit.UpdateFromStateVectors(position, newVelocity, bodyOrbit.referenceBody, bodyOrbit.epoch);
+            orbit.UpdateFromStateVectors(position, newVelocity, orbit.referenceBody, orbit.epoch);
 
-            bodyOrbit.meanAnomalyAtEpoch = (bodyOrbit.meanAnomaly - (currentUT - bodyOrbit.epoch) * tau / bodyOrbit.period) % tau; // set new initial meanAnomaly to match period
+            FixParabolic(ref orbit);
+
+            double meanMotion = Math.Sqrt(body.gravParameter / Math.Pow(Math.Abs(orbit.semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits.
+            orbit.meanAnomalyAtEpoch = (orbit.meanAnomaly - meanMotion * (currentUT - orbit.epoch)) % tau; // set new initial meanAnomaly to match period
 
             if (alignmentToCenter > 1d - epsilon)
             {
@@ -654,7 +669,7 @@ namespace CelestialBodyMover
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
 
-            Util.Log($"semiMajorAxis: {bodyOrbit.semiMajorAxis}, ApR: {bodyOrbit.ApR}, PeR: {bodyOrbit.PeR}, eccentricity: {bodyOrbit.eccentricity}, inclination: {bodyOrbit.inclination}, LAN: {bodyOrbit.LAN}, AOP: {bodyOrbit.argumentOfPeriapsis}, orbitalEnergy: {bodyOrbit.orbitalEnergy}, orbitalSpeed: {bodyOrbit.orbitalSpeed}");
+            Util.Log($"semiMajorAxis: {orbit.semiMajorAxis}, ApR: {orbit.ApR}, PeR: {orbit.PeR}, eccentricity: {orbit.eccentricity}, inclination: {orbit.inclination}, LAN: {orbit.LAN}, AOP: {orbit.argumentOfPeriapsis}, orbitalEnergy: {orbit.orbitalEnergy}, orbitalSpeed: {orbit.orbitalSpeed}");
 
             // need to make sure the vessel is touching the ground (not just splashed)
 
