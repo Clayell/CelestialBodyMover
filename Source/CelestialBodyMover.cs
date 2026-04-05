@@ -113,8 +113,6 @@ namespace CelestialBodyMover
         {
             Util.Log("Start called");
 
-            DontDestroyOnLoad(this); // we only want to load the saved orbits once (apparently this is already called when using KSPAddon once = true?
-
             InitToolbar();
 
             SettingsFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
