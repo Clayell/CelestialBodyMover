@@ -59,15 +59,18 @@ namespace CelestialBodyMover
         [KSPField(isPersistant = true)]
         bool firstLoad = true;
         [KSPField(isPersistant = true)]
-        bool debugMode = true;
+        bool debugMode = false;
 
-        internal static bool isActive = false; // this should be false by default, even after loading
+        [KSPField(isPersistant = true)]
+        bool isActive = false;
+        bool isFrozen = false; // this should be false by default, even after loading
 
+        Vector3d forceVector = Vector3d.zero;
         Vector3d currentPos = Vector3d.zero;
 
-        Rect mainRect = new Rect(100, 100, -1, -1);
+        Rect mainRect = new Rect(0, 0, -1, -1);
         [KSPField(isPersistant = true)]
-        Vector2 mainRectPos = Vector2.zero;
+        Vector2 mainRectPos = new Vector2(100, 100);
 
         //ScenarioModule scenarioRoot = new ScenarioModule();
         //ConfigNode root = new ConfigNode();
@@ -217,7 +220,7 @@ namespace CelestialBodyMover
                     Util.Log($"Body is a star (bodyName: {body.name})");
                     continue;
                 }
-                Orbit orbit = body?.orbit;
+                Orbit orbit = body.orbit;
                 if (orbit == null)
                 {
                     Util.LogError($"Failed to get orbit for body {body?.name}");
@@ -305,7 +308,7 @@ namespace CelestialBodyMover
             for (int i = 0; i < numBodies; i++)
             {
                 CelestialBody body = FlightGlobals.Bodies[i];
-                if (body.isStar || body.name == "Sun")
+                if (body.isStar)
                 {
                     Util.Log($"Body is a star (bodyName: {body.name}) in {saveNode}, skipping");
                     continue;
@@ -368,6 +371,7 @@ namespace CelestialBodyMover
             if (orbit.eccentricity == 1d)
             {
                 orbit.eccentricity = 1d - 1e-9; // decrease parabolic orbits to be highly eccentric
+                Util.LogWarning($"Orbit around {orbit.referenceBody} was parabolic, changing eccentricity to {orbit.eccentricity} to avoid issues with orbit calculations");
             }
             orbit.semiMajorAxis = -orbit.referenceBody.gravParameter / (2d * orbit.orbitalEnergy); // we need to use this definition because only orbitalEnergy is actually recalculated in UpdateFromFixedVectors
         }
@@ -406,10 +410,6 @@ namespace CelestialBodyMover
                 firstLoad = false;
             }
 
-            MakeVesselStationary(isActive);
-            Vector3d thrustVector = GetThrust(isActive);
-            if (thrustVector != Vector3d.zero) MovePlanet(thrustVector);
-
             if (debugMode)
             {
                 CheatOptions.InfinitePropellant = true;
@@ -419,6 +419,22 @@ namespace CelestialBodyMover
                 CheatOptions.UnbreakableJoints = true;
                 CheatOptions.IgnoreEVAConstructionMassLimit = true;
                 CheatOptions.IgnoreKerbalInventoryLimits = true;
+            }
+
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            if (isActive && !FlightDriver.Pause && HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && !vessel.HoldPhysics && !vessel.mainBody.isStar)
+            {
+                if (isFrozen)
+                {
+                    MakeVesselStationary();
+                    forceVector = GetVesselThrust();
+                }
+                else
+                {
+                    forceVector = GetGravitationalForce();
+                }
+
+                if (!forceVector.IsZero()) MovePlanet(forceVector, isFrozen);
             }
         }
 
@@ -431,12 +447,21 @@ namespace CelestialBodyMover
 
         private void MakeMainWindow(int id)
         {
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT)
+            string buttonText = isActive ? "Deactivate CBM" : "Activate CBM";
+            if (GUILayout.Button(buttonText))
             {
-                string buttonText = isActive ? "Unfreeze Craft" : "Freeze Craft";
-                if (GUILayout.Button(buttonText))
+                isActive = !isActive;
+
+                Util.Log(isActive ? "CBM Activated" : "CBM Deactivated");
+            }
+
+            if (isActive && HighLogic.LoadedScene == GameScenes.FLIGHT)
+            {
+                GUILayout.Space(10);
+                string frozenButton = isFrozen ? "Unfreeze Craft" : "Freeze Craft";
+                if (GUILayout.Button(frozenButton))
                 {
-                    isActive = !isActive;
+                    isFrozen = !isFrozen;
                     if (FlightGlobals.ActiveVessel != null)
                     {
                         Vessel vessel = FlightGlobals.ActiveVessel;
@@ -446,7 +471,7 @@ namespace CelestialBodyMover
                         Util.Log($"currentPos: {currentPos}");
                     }
 
-                    Util.Log(isActive ? "Craft Frozen" : "Craft Unfrozen");
+                    Util.Log(isFrozen ? "Craft Frozen" : "Craft Unfrozen");
                 }
             }
 
@@ -459,44 +484,43 @@ namespace CelestialBodyMover
 
             GUILayout.Space(10);
 
-            if (GUILayout.Button("TESTORBIT"))
+            if (debugMode)
             {
-                CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                Orbit orbit = testBody.orbit;
-                orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
-            }
+                if (GUILayout.Button("TESTORBIT"))
+                {
+                    double currentUT = Planetarium.GetUniversalTime();
 
-            if (GUILayout.Button("TESTROTATION"))
-            {
-                CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                testBody.rotationPeriod = 12345d;
-                testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
+                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    Orbit orbit = testBody.orbit;
+                    orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
+                    double meanMotion = Math.Sqrt(testBody.gravParameter / Math.Pow(Math.Abs(orbit.semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits.
+                    orbit.meanAnomalyAtEpoch = (orbit.meanAnomaly - meanMotion * (currentUT - orbit.epoch)) % tau; // set new initial meanAnomaly to match period
+                }
+
+                if (GUILayout.Button("TESTROTATION"))
+                {
+                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    testBody.rotationPeriod = 12345d;
+                    testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
+                }
             }
 
             GUI.DragWindow();
         }
 
-        private void MakeVesselStationary(bool isActive)
+        private void MakeVesselStationary()
         {
             Vessel vessel = FlightGlobals.ActiveVessel;
 
-            if (vessel == null)
-                return;
-
-            if (isActive)
-            {
-                vessel.SetWorldVelocity(Vector3d.zero);
-                vessel.SetPosition(currentPos, true);
-            }
+            vessel.SetWorldVelocity(Vector3d.zero);
+            vessel.SetPosition(currentPos, true);
         }
 
-        private Vector3d GetThrust(bool isActive)
+        private Vector3d GetVesselThrust()
         {
-            if (!isActive || HighLogic.LoadedScene != GameScenes.FLIGHT) return Vector3d.zero;
-
             Vessel vessel = FlightGlobals.ActiveVessel;
 
-            if (vessel.heightFromTerrain >= 10d && vessel.situation != Vessel.Situations.LANDED)
+            if (vessel.heightFromTerrain >= 10d && !vessel.LandedOrSplashed)
             {
                 Util.Log($"Altitude too high (vessel.heightFromTerrain: {vessel.heightFromTerrain}, vessel.situation: {vessel.situation})");
                 return Vector3d.zero;
@@ -504,7 +528,7 @@ namespace CelestialBodyMover
 
             CelestialBody body = vessel.mainBody;
 
-            if (body.isStar || body.name == "Sun")
+            if (body.isStar)
             {
                 Util.Log($"Body is a star (bodyName: {body.name})");
                 return Vector3d.zero;
@@ -518,15 +542,15 @@ namespace CelestialBodyMover
 
             //vessel.GetHeightFromTerrain();
 
-            if (TimeWarp.CurrentRate > 1d)
+            if (TimeWarp.CurrentRate != 1f && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
             {
                 //BackgroundThrustVessel bVessel = vessel.FindVesselModuleImplementing<BackgroundThrustVessel>();
                 //thrustVector = bVessel.Thrust;
-                thrustVector = Vector3d.zero;
+                thrustVector.Zero();
             }
             else
             {
-                // thrust code taken from https://github.com/MuMech/MechJeb2/blob/dev/MechJeb2/VesselState.cs
+                // vessel thrust code adapted from https://github.com/MuMech/MechJeb2/blob/dev/MechJeb2/VesselState.cs
 
                 List<Part> parts = vessel.parts.Where(p => p.State == PartStates.ACTIVE).ToList();
 
@@ -574,7 +598,7 @@ namespace CelestialBodyMover
                 }
             }
 
-            if (thrustVector == Vector3d.zero)
+            if (thrustVector.IsZero())
             {
                 //Util.Log($"No thrust (thrustVector: {thrustVector})");
                 return thrustVector;
@@ -585,20 +609,39 @@ namespace CelestialBodyMover
             return thrustVector;
         }
 
-        private void MovePlanet(Vector3d thrustVector)
+        private Vector3d GetGravitationalForce()
         {
             Vessel vessel = FlightGlobals.ActiveVessel;
+            if (vessel.LandedOrSplashed) return Vector3d.zero;
+            double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
+            CelestialBody body = vessel.mainBody;
+
+            Vector3d radiusVec = body.position - vessel.GetWorldPos3D();
+            Vector3d toBody = radiusVec.normalized;
+            double radius = radiusVec.magnitude;
+
+            double forceMagnitude = body.gravParameter * vesselMass / (radius * radius);
+
+            Vector3d forceVector = toBody * forceMagnitude;
+
+            Util.Log($"vesselMass: {vesselMass}, radius: {radius}, body.gravParameter: {body.gravParameter}, forceMagnitude: {forceMagnitude}, forceVector: {forceVector}, toBody: {toBody}");
+
+            return forceVector;
+        }
+
+        private void MovePlanet(Vector3d forceVector, bool isFrozen)
+        {
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
             CelestialBody body = vessel.mainBody;
             double currentUT = Planetarium.GetUniversalTime();
             const double epsilon = 1e-3d;
 
-            Vector3d thrustNormal = thrustVector.normalized;
+            Vector3d thrustNormal = forceVector.normalized;
 
             Orbit orbit = body.orbit;
-            Vector3d vesselPos = vessel.GetWorldPos3D();
-            Vector3d planetPos = body.position;
-            Vector3d toPlanet = (planetPos - vesselPos).normalized;
-            double alignmentToCenter = Vector3d.Dot(thrustNormal, toPlanet);
+            Vector3d radiusVec = body.position - vessel.GetWorldPos3D();
+            double alignmentToCenter = isFrozen ? Vector3d.Dot(thrustNormal, radiusVec.normalized) : 1d; // if using gravitational force, its always aligned
 
             if (alignmentToCenter <= 0d)
             {
@@ -606,9 +649,11 @@ namespace CelestialBodyMover
                 return;
             }
 
-            double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
+            // TODO: add a way to change reference body if it gets in the hill sphere, would need to use world vectors instead of local
 
-            double effectiveThrust = thrustVector.magnitude * alignmentToCenter;
+            // TODO: need to make sure the vessel is close to the actual ground, even if underwater
+
+            double effectiveThrust = forceVector.magnitude * alignmentToCenter;
             Vector3d forceOnPlanet = thrustNormal * effectiveThrust;
             double totalMass = body.Mass + vesselMass;
             Vector3d accel = forceOnPlanet / totalMass;
@@ -629,7 +674,7 @@ namespace CelestialBodyMover
             {
                 Util.Log($"Thrust aligned with planet center, no torque (alignmentToCenter: {alignmentToCenter})");
 
-                Util.Log($"thrustVector: {thrustVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}");
+                Util.Log($"forceVector: {forceVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}");
                 Util.Log($"velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}");
             }
             else
@@ -641,16 +686,15 @@ namespace CelestialBodyMover
                 {
                     Util.Log($"Thrust aligned with planet axis, no torque (alignmentToAxis: {alignmentToAxis})");
 
-                    Util.Log($"thrustVector: {thrustVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}");
+                    Util.Log($"forceVector: {forceVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}");
                     Util.Log($"velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}");
                 }
                 else
                 {
-                    Vector3d radius = vesselPos - planetPos;
-                    Vector3d torque = Vector3d.Cross(radius, thrustVector);
+                    Vector3d torque = Vector3d.Cross(radiusVec, forceVector);
                     double torqueAlongAxis = Vector3d.Dot(torque, axis);
 
-                    double I = (0.4 * body.Mass * body.Radius * body.Radius) + vesselMass * radius.magnitude * radius.magnitude;
+                    double I = (0.4 * body.Mass * body.Radius * body.Radius) + vesselMass * radiusVec.magnitude * radiusVec.magnitude;
 
                     double angularAccel = torqueAlongAxis / I;
 
@@ -663,18 +707,13 @@ namespace CelestialBodyMover
 
                     Util.Log($"alignmentToCenter: {alignmentToCenter}, alignmentToAxis: {alignmentToAxis}, torque: {torque}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}, body.angularVelocity: {body.angularVelocity}, newAngularVelocity: {newAngularVelocity}, origPeriod: {origPeriod}, newPeriod: {newPeriod}, angularAccel: {angularAccel}");
                     Util.Log($"torque: {torque.magnitude}, velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}, body.angularVelocity: {body.angularVelocity.magnitude}, newAngularVelocity: {newAngularVelocity.magnitude}");
-                    Util.Log($"I: {I}, torqueAlongAxis: {torqueAlongAxis}, forceOnPlanet: {forceOnPlanet.magnitude}, torque: {torque.magnitude}, axis: {axis}, body.Radius: {body.Radius}, radius.magnitude: {radius.magnitude}");
+                    Util.Log($"I: {I}, torqueAlongAxis: {torqueAlongAxis}, forceOnPlanet: {forceOnPlanet.magnitude}, torque: {torque.magnitude}, axis: {axis}, body.Radius: {body.Radius}, radius.magnitude: {radiusVec.magnitude}");
                 }
 
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
 
             Util.Log($"semiMajorAxis: {orbit.semiMajorAxis}, ApR: {orbit.ApR}, PeR: {orbit.PeR}, eccentricity: {orbit.eccentricity}, inclination: {orbit.inclination}, LAN: {orbit.LAN}, AOP: {orbit.argumentOfPeriapsis}, orbitalEnergy: {orbit.orbitalEnergy}, orbitalSpeed: {orbit.orbitalSpeed}");
-
-            // need to make sure the vessel is touching the ground (not just splashed)
-
-            //Util.Log($"TimeWarp.CurrentRate: {TimeWarp.CurrentRate}, thrustVector: {thrustVector}, thrustVector2: {thrustVector2}, thrustVector3: {thrustVector3}, thrustMagnitude: {thrustMagnitude}, thrustMagnitude2: {thrustMagnitude2}, thrustMagnitude3: {thrustMagnitude3}, bodyPos: {body.position}, bodyAngVel: {body.angularVelocity}, body.zUpAngularVelocity: {body.zUpAngularVelocity}, rotationPeriod: {body.rotationPeriod}, solarDayLength: {body.solarDayLength}, rotation: {body.rotation}, rotationAngle: {body.rotationAngle}, referenceBody: {bodyOrbit.referenceBody.bodyName}, GetRelativeVel: {bodyOrbit.GetRelativeVel()}, orbitalSpeed: {bodyOrbit.orbitalSpeed}, GetFrameVel().magnitude: {bodyOrbit.GetFrameVel().magnitude}, transformRight: {body.transformRight}, transformUp: {body.transformUp}");
-            //Util.Log($"thrustVector.normalized: {thrustVector.normalized} vesselForward: {vesselForward} dot: {Vector3d.Dot(thrustVector.normalized, vesselForward)}, vesselPos: {vesselPos}, planetPos: {planetPos}, toPlanet: {toPlanet}, alignmentToCenter: {alignmentToCenter}");
         }
     }
 
