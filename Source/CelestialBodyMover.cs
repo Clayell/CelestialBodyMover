@@ -43,6 +43,8 @@ namespace CelestialBodyMover
     //[KSPAddon(KSPAddon.Startup.AllGameScenes, true)]
     //public class CelestialBodyMover : MonoBehaviour
     {
+        const double tau = 2d * Math.PI; // Math.Tau is in .NET 5
+
         ToolbarControl toolbarControl = null;
 
         GUISkin skin;
@@ -228,21 +230,26 @@ namespace CelestialBodyMover
                     Util.LogError($"Failed to get bodyNode for body {body?.name}");
                 }
 
-                bodyNode.AddValue("pos", orbit.pos);
-                bodyNode.AddValue("vel", orbit.vel);
-                bodyNode.AddValue("epoch", orbit.epoch);
-                //bodyNode.AddValue("inclination", orbit.inclination);
-                //bodyNode.AddValue("eccentricity", orbit.eccentricity);
-                //bodyNode.AddValue("semiMajorAxis", orbit.semiMajorAxis);
-                //bodyNode.AddValue("LAN", orbit.LAN);
-                //bodyNode.AddValue("argumentOfPeriapsis", orbit.argumentOfPeriapsis);
-                //bodyNode.AddValue("meanAnomalyAtEpoch", orbit.meanAnomalyAtEpoch);
-                //bodyNode.AddValue("epoch", orbit.epoch);
-                //bodyNode.AddValue("referenceBody", orbit.referenceBody);
+                string log = "";
+                void AddValue(string name, object value)
+                {
+                    bodyNode.AddValue(name, value);
+                    log += $"{name}: {value}, ";
+                }
 
-                bodyNode.AddValue("rotationPeriod", body.rotationPeriod);
-                bodyNode.AddValue("initialRotation", body.initialRotation);
-                Util.Log($"Saved orbit for body {body.name}: pos: {orbit.pos}, vel: {orbit.vel}, epoch: {orbit.epoch}, rotationPeriod: {body.rotationPeriod} (solarDayLength: {body.solarDayLength}), initialRotation: {body.initialRotation}");
+                AddValue("inclination", orbit.inclination);
+                AddValue("eccentricity", orbit.eccentricity);
+                AddValue("semiMajorAxis", orbit.semiMajorAxis);
+                AddValue("LAN", orbit.LAN);
+                AddValue("argumentOfPeriapsis", orbit.argumentOfPeriapsis);
+                AddValue("meanAnomalyAtEpoch", orbit.meanAnomalyAtEpoch);
+                AddValue("epoch", orbit.epoch);
+                AddValue("referenceBody", orbit.referenceBody.name);
+
+                AddValue("rotationPeriod", body.rotationPeriod);
+                AddValue("initialRotation", body.initialRotation);
+
+                Util.Log($"Saved orbit for body {body.name}: " + log);
             }
             Util.Log($"Saved orbits for {saveNode}");
 
@@ -298,38 +305,54 @@ namespace CelestialBodyMover
                 CelestialBody body = FlightGlobals.Bodies[i];
                 if (body.isStar || body.name == "Sun")
                 {
-                    Util.Log($"Body is a star (bodyName: {body.name})");
+                    Util.Log($"Body is a star (bodyName: {body.name}) in {saveNode}, skipping");
                     continue;
                 }
                 ConfigNode bodyNode = orbits.GetNode(body.name);
                 if (bodyNode == null)
                 {
-                    Util.LogError($"Failed to find node for body {body.name} in {root}");
+                    Util.LogError($"Failed to find node for body {body.name} in {saveNode}");
                     continue;
                 }
-                Vector3d pos = ConfigNode.ParseVector3D(bodyNode.GetValue("pos"));
-                Vector3d vel = ConfigNode.ParseVector3D(bodyNode.GetValue("vel"));
-                if (pos == Vector3d.zero || vel == Vector3d.zero) { Util.LogError($"Failed to parse pos ({pos}) or vel ({vel}) from {root} for body {body.name}"); continue; }
-                if (!double.TryParse(bodyNode.GetValue("epoch"), out double epoch))
-                {
-                    Util.LogError($"Failed to parse epoch for body {body.name} in {root}");
-                    continue;
-                }
-                body.orbit.UpdateFromStateVectors(pos, vel, body.orbit.referenceBody, epoch);
 
-                if (!double.TryParse(bodyNode.GetValue("rotationPeriod"), out double rotationPeriod))
+                string log = "";
+                bool DoubleParse(string value, out double result)
+                {                  
+                    if (!double.TryParse(bodyNode.GetValue(value), out result))
+                    {
+                        Util.LogError($"Failed to parse {value} for body {body.name} in {saveNode}");
+                        return false;
+                    }
+                    log += $"{value}: {result}, ";
+                    return true;
+                }
+
+                if (!DoubleParse("inclination", out double inclination)) continue;
+                if (!DoubleParse("eccentricity", out double eccentricity)) continue;
+                if (!DoubleParse("semiMajorAxis", out double semiMajorAxis)) continue;
+                if (!DoubleParse("LAN", out double LAN)) continue;
+                if (!DoubleParse("argumentOfPeriapsis", out double argumentOfPeriapsis)) continue;
+                if (!DoubleParse("meanAnomalyAtEpoch", out double meanAnomalyAtEpoch)) continue;
+                if (!DoubleParse("epoch", out double epoch)) continue;
+                CelestialBody referenceBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == bodyNode.GetValue("referenceBody"));
+                if (referenceBody == null)
                 {
-                    Util.LogError($"Failed to parse rotationPeriod for body {body.name} in {root}");
+                    Util.LogError($"Failed to parse {referenceBody} for body {body.name} in {saveNode}");
                     continue;
                 }
+
+                if (!DoubleParse("rotationPeriod", out double rotationPeriod)) continue;
+                if (!DoubleParse("initialRotation", out double initialRotation)) continue;
+
+                Orbit bodyOrbit = body.orbit;
+
+                bodyOrbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomalyAtEpoch, epoch, referenceBody); // calls Init()
+
+                bodyOrbit.meanAnomaly = (bodyOrbit.meanAnomalyAtEpoch + (UT - bodyOrbit.epoch) * tau / bodyOrbit.period) % tau; // Init() just sets meanAnomaly to meanAnomalyAtEpoch, so we need to fix it
+
                 body.rotationPeriod = rotationPeriod;
-                if (!double.TryParse(bodyNode.GetValue("initialRotation"), out double initialRotation))
-                {
-                    Util.LogError($"Failed to parse initialRotation for body {body.name} in {root}");
-                    continue;
-                }
                 body.initialRotation = initialRotation;
-                Util.Log($"Loading orbit for body {body.name}: pos: {pos}, vel: {vel}, epoch: {epoch}, rotationPeriod: {rotationPeriod}, initialRotation: {initialRotation}");
+                Util.Log($"Loading orbit for body {body.name}: " + log);
 
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
@@ -428,7 +451,7 @@ namespace CelestialBodyMover
             {
                 CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
                 Orbit orbit = testBody.orbit;
-                orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, testBody.orbit.referenceBody);
+                orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
             }
 
             if (GUILayout.Button("TESTROTATION"))
@@ -583,7 +606,9 @@ namespace CelestialBodyMover
 
             Vector3d newVelocity = velocity + deltaV;
 
-            bodyOrbit.UpdateFromStateVectors(position, newVelocity, bodyOrbit.referenceBody, currentUT);
+            bodyOrbit.UpdateFromStateVectors(position, newVelocity, bodyOrbit.referenceBody, bodyOrbit.epoch);
+
+            bodyOrbit.meanAnomalyAtEpoch = (bodyOrbit.meanAnomaly - (currentUT - bodyOrbit.epoch) * tau / bodyOrbit.period) % tau; // set new initial meanAnomaly to match period
 
             if (alignmentToCenter > 1d - epsilon)
             {
@@ -616,8 +641,8 @@ namespace CelestialBodyMover
 
                     Vector3d newAngularVelocity = body.angularVelocity + axis * (angularAccel * Time.fixedDeltaTime);
 
-                    double newPeriod = (2d * Math.PI) / newAngularVelocity.magnitude;
-                    double origPeriod = (2d * Math.PI) / body.angularVelocity.magnitude;
+                    double newPeriod = tau / newAngularVelocity.magnitude;
+                    double origPeriod = tau / body.angularVelocity.magnitude;
                     body.rotationPeriod = newPeriod; // angular velocity is set by rotation period in CBUpdate
                     body.initialRotation = (body.rotationAngle - 360d * (1d / newPeriod) * currentUT) % 360d; // work backwards from rotationAngle = (initialRotation + 360.0 * rotPeriodRecip * Planetarium.GetUniversalTime()) % 360.0;
 
