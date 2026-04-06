@@ -67,7 +67,7 @@ namespace CelestialBodyMover
         bool debugMode = false;
 
         [KSPField(isPersistant = true)]
-        public bool isActive = false; // needs to be public so we can use GetField in OrbitPatches
+        internal bool isActive = false; // needs to be public so we can use GetField in OrbitPatches
         bool isFrozen = false; // this should be false by default, even after loading
 
         Vector3d forceVector;
@@ -108,13 +108,10 @@ namespace CelestialBodyMover
             }
         }
 
-        void Awake()
-        {
-            Instance = this;
-        }
-
         public override void OnAwake() // scenariomodule stuff needs to run before we call our Awake stuff 
         {
+            Instance = this; // this needs to be here and not in the normal Awake()
+
             Util.Log("Awake called");
 
             skin = (GUISkin)GUISkin.Instantiate(HighLogic.Skin);
@@ -877,13 +874,10 @@ namespace CelestialBodyMover
     [HarmonyPatch(typeof(Orbit))]
     public static class OrbitPatches
     {
-        //internal static ScenarioModule scenario = ScenarioRunner.GetLoadedModules().FirstOrDefault(s => s.ClassName == nameof(CelestialBodyMover));
-        //static FieldInfo field = scenario.GetType().GetField(nameof(CelestialBodyMover.isActive));
         [HarmonyPatch(nameof(Orbit.UpdateFromFixedVectors))]
         [HarmonyPrefix]
         public static bool Prefix_UpdateFromFixedVectors(ref Orbit __instance, Vector3d pos, Vector3d vel, CelestialBody refBody, double UT)
         {
-            //bool isActive = (bool)field.GetValue(scenario);
             Util.Log($"isActive: {CelestialBodyMover.Instance.isActive}");
             if (CelestialBodyMover.Instance.isActive && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel.mainBody != null && __instance == FlightGlobals.ActiveVessel.mainBody.orbit)
             {
@@ -1002,10 +996,5 @@ namespace CelestialBodyMover
             var harmony = new Harmony("CelestialBodyMover.HarmonyPatcher");
             harmony.PatchAll();
         }
-
-        //void OnDestroy()
-        //{
-        //    Destroy(OrbitPatches.scenario);
-        //}
     }
 }
