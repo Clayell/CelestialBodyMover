@@ -38,7 +38,7 @@
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
-    <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll" />
+    <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\Assembly-CSharp*.dll" />
     <Reference Include="$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine*.dll" />
     <Reference Include="$(KSPRoot)\GameData\001_ToolbarControl\Plugins\ToolbarControl.dll" />
     <Reference Include="$(KSPRoot)\GameData\000_ClickThroughBlocker\Plugins\ClickThroughBlocker.dll" />
@@ -54,6 +54,8 @@
       <DependentUpon>AssemblyVersion.tt</DependentUpon>
     </Compile>
     <Compile Include="Source\CelestialBodyMover.cs" />
+    <Compile Include="Source\HarmonyPatches.cs" />
+    <Compile Include="Source\Settings.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="GameData\CelestialBodyMover\CelestialBodyMover.version" />
