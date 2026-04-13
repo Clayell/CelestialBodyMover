@@ -55,7 +55,9 @@
     </Compile>
     <Compile Include="Source\CelestialBodyMover.cs" />
     <Compile Include="Source\HarmonyPatches.cs" />
+    <Compile Include="Source\Renderers.cs" />
     <Compile Include="Source\Settings.cs" />
+    <Compile Include="Source\Tooltip.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="GameData\CelestialBodyMover\CelestialBodyMover.version" />
@@ -76,7 +78,7 @@
     <Content Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\CelestialBodyMover-24.png" />
     <Content Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\CelestialBodyMover-64.png" />
     <Content Include="GameData\CelestialBodyMover\Plugins\CelestialBodyMover.dll" />
-    <Content Include="LICENSE.txt" />
+    <None Include="LICENSE.md" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

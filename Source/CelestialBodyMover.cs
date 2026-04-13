@@ -1,6 +1,6 @@
 ﻿//using BackgroundThrust;
 using ClickThroughFix;
-using HarmonyLib;
+//using HarmonyLib;
 using KSP.UI.Screens;
 using System;
 using System.Collections.Generic;
@@ -36,6 +36,8 @@ namespace CelestialBodyMover
         {
             UnityEngine.Debug.LogError($"{prefix}: {message}");
         }
+
+        internal static bool MapViewEnabled() => MapView.MapIsEnabled && !HighLogic.LoadedSceneIsEditor && HighLogic.LoadedSceneIsFlight;
     }
 
     [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
@@ -63,18 +65,83 @@ namespace CelestialBodyMover
         //bool? firstLoad = null;
         [KSPField(isPersistant = true)]
         bool firstLoad = true;
-        [KSPField(isPersistant = true)]
-        bool debugMode = false;
 
         [KSPField(isPersistant = true)]
-        internal bool isActive = false; // needs to be public so we can use GetField in OrbitPatches
+        internal bool isActive = false;
+        //bool _isFrozen = false; // this should be false by default, even after loading
+        //bool isFrozen
+        //{
+        //    get => _isFrozen;
+        //    set
+        //    {
+        //        if (_isFrozen != value)
+        //        {
+        //            needWindowChange = true;
+        //            _isFrozen = value;
+        //        }
+        //    }
+        //} // TODO test this needWindowChange
         bool isFrozen = false; // this should be false by default, even after loading
 
-        Vector3d forceVector;
+        Vector3d _forceVector;
+        Vector3d forceVector // note: dont use .Zero() on this, since it wont trigger the setter
+        {
+            get => _forceVector;
+            set 
+            {
+                double angle = double.NaN;
+                if (!value.IsZero() && forceLineRenderer != null)
+                {
+                    angle = UtilMath.AngleBetween(forceLineRenderer.PointDirection, value) * radToDeg;
+                }
+                
+                //Util.Log($"forceLineRenderer.PointDirection: {forceLineRenderer?.PointDirection}, value: {value.normalized}, AngleBetween: {angle}, bool: {(!value.IsZero() && forceLineRenderer != null && angle > 1d)}, bool1: {!value.IsZero()}, bool2: {forceLineRenderer != null}, bool3: {angle > 1d}");
+                if (_forceVector.IsZero() != value.IsZero())
+                {
+                    needWindowChange = true;
+                    needForceLineReset = true;
+                }
+                else if (angle > 1d)
+                {
+                    //Util.Log("resetting line");
+                    needForceLineReset = true;
+                }
+                _forceVector = value;
+            }
+        }
         Vector3d radiusVec;
         Vector3d bodyAccel;
-        double alignmentToCenter;
-        double alignmentToAxis;
+        double _alignmentToCenter;
+        double alignmentToCenter
+        {
+            get => _alignmentToCenter;
+            set
+            {
+                //Util.Log($"_alignmentToCenter: {_alignmentToCenter}, value: {value}, bool1: {(_alignmentToCenter <= 0d)}, bool2: {(value <= 0d)}");
+                if ((_alignmentToCenter <= 0d) != (value <= 0d))
+                {
+                    //Util.Log($"alignmentToCenter changed from {_alignmentToCenter} to {value}, resetting window");
+                    needWindowChange = true;
+                }
+                _alignmentToCenter = value;
+            }
+        }
+        double _alignmentToAxis;
+        double alignmentToAxis
+        {
+            get => _alignmentToAxis;
+            set
+            {
+                const double tolerance = 1e-3d;
+                //Util.Log($"_alignmentToAxis: {_alignmentToAxis}, value: {value}, bool1: {(Math.Abs(_alignmentToAxis) > 1d - tolerance)}, bool2: {(Math.Abs(value) > 1d - tolerance)}");
+                if ((Math.Abs(_alignmentToAxis) > 1d - tolerance) != (Math.Abs(value) > 1d - tolerance))
+                {
+                    //Util.Log($"alignmentToAxis changed from {_alignmentToAxis} to {value}, resetting window");
+                    needWindowChange = true;
+                }
+                _alignmentToAxis = value;
+            }
+        }
         double torqueAlongAxis;
         double bodyAngularAccel;
 
@@ -85,12 +152,23 @@ namespace CelestialBodyMover
         Vector2 mainRectPos = new Vector2(100, 100);
         bool needWindowChange = false;
 
-        CBMSettings settings;
+        internal CBMSettings settings;
+
+        MapLineRenderer radialLineRenderer;
+        MapLineRenderer normalLineRenderer;
+        MapLineRenderer progradeLineRenderer;
+        MapLineRenderer forceLineRenderer;
+        bool justResetLines = false;
+        bool needForceLineReset = false;
+        [KSPField(isPersistant = true)]
+        bool displayLines = false;
+
+        // TODO: use property setters and fields to detect when the window needs to be reset
 
         //ScenarioModule scenarioRoot = new ScenarioModule();
         //ConfigNode root = new ConfigNode();
 
-        static string SettingsFolder;
+        static string PluginDataFolder;
 
         private void InitToolbar()
         {
@@ -115,8 +193,6 @@ namespace CelestialBodyMover
             Util.Log("Awake called");
 
             skin = (GUISkin)GUISkin.Instantiate(HighLogic.Skin);
-
-            settings = HighLogic.CurrentGame.Parameters.CustomParams<CBMSettings>();
 
             lineStyle = new GUIStyle();
             lineStyle.normal.background = Texture2D.whiteTexture;
@@ -144,7 +220,11 @@ namespace CelestialBodyMover
 
             InitToolbar();
 
-            SettingsFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
+            PluginDataFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
+
+            settings = HighLogic.CurrentGame.Parameters.CustomParams<CBMSettings>();
+
+            Tooltip.RecreateInstance();
         }
 
         void OnDestroy()
@@ -166,6 +246,15 @@ namespace CelestialBodyMover
             GameEvents.onGUIAstronautComplexDespawn.Remove(ShowBadUI);
             GameEvents.onGUIRnDComplexDespawn.Remove(ShowBadUI);
             GameEvents.onGUIAdministrationFacilityDespawn.Remove(ShowBadUI);
+
+            Destroy(radialLineRenderer);
+            Destroy(normalLineRenderer);
+            Destroy(progradeLineRenderer);
+            Destroy(forceLineRenderer);
+            radialLineRenderer = null;
+            normalLineRenderer = null;
+            progradeLineRenderer = null;
+            forceLineRenderer = null;
 
             if (Instance == this)
             {
@@ -196,6 +285,15 @@ namespace CelestialBodyMover
             Util.Log($"Scene changing to {s}");
 
             isLoading = true;
+
+            Destroy(radialLineRenderer);
+            Destroy(normalLineRenderer);
+            Destroy(progradeLineRenderer);
+            Destroy(forceLineRenderer);
+            radialLineRenderer = null;
+            normalLineRenderer = null;
+            progradeLineRenderer = null;
+            forceLineRenderer = null;
         }
 
         public override void OnSave(ConfigNode root)
@@ -213,7 +311,7 @@ namespace CelestialBodyMover
         private void SaveOrbitDetails(string saveFile)
         {
             ConfigNode root = new ConfigNode();
-            string savePath = Path.Combine(SettingsFolder, saveFile);
+            string savePath = Path.Combine(PluginDataFolder, saveFile);
             File.WriteAllText(savePath, "");
 
             SaveOrbitDetails(ref root, Path.GetFileNameWithoutExtension(savePath));
@@ -237,9 +335,9 @@ namespace CelestialBodyMover
                 Util.LogError($"FlightGlobals.Bodies is null");
                 return;
             }
-
+            double UT = Planetarium.GetUniversalTime();
             orbits.AddValue("numBodies", FlightGlobals.Bodies.Count);
-            orbits.AddValue("UT", Planetarium.GetUniversalTime());
+            orbits.AddValue("UT", UT);
 
             for (int i = 0; i < FlightGlobals.Bodies.Count; i++)
             {
@@ -269,15 +367,13 @@ namespace CelestialBodyMover
                     log += $"{name}: {value}, ";
                 }
 
-                FixParabolic(ref orbit);
-
                 AddValue("inclination", orbit.inclination);
                 AddValue("eccentricity", orbit.eccentricity);
                 AddValue("semiMajorAxis", orbit.semiMajorAxis);
                 AddValue("LAN", orbit.LAN);
                 AddValue("argumentOfPeriapsis", orbit.argumentOfPeriapsis);
-                AddValue("meanAnomalyAtEpoch", orbit.meanAnomalyAtEpoch);
-                AddValue("epoch", orbit.epoch);
+                AddValue("meanAnomaly", orbit.meanAnomaly);
+                AddValue("epoch", UT);
                 AddValue("referenceBody", orbit.referenceBody.name);
 
                 AddValue("rotationPeriod", body.rotationPeriod);
@@ -292,7 +388,7 @@ namespace CelestialBodyMover
 
         private void LoadOrbitDetails(string saveFile)
         {
-            string savePath = Path.Combine(SettingsFolder, saveFile);
+            string savePath = Path.Combine(PluginDataFolder, saveFile);
             Util.Log($"Loading orbits from {savePath}...");
 
             if (!File.Exists(savePath))
@@ -366,7 +462,7 @@ namespace CelestialBodyMover
                 if (!DoubleParse("semiMajorAxis", out double semiMajorAxis)) continue;
                 if (!DoubleParse("LAN", out double LAN)) continue;
                 if (!DoubleParse("argumentOfPeriapsis", out double argumentOfPeriapsis)) continue;
-                if (!DoubleParse("meanAnomalyAtEpoch", out double meanAnomalyAtEpoch)) continue;
+                if (!DoubleParse("meanAnomaly", out double meanAnomaly)) continue;
                 if (!DoubleParse("epoch", out double epoch)) continue;
                 CelestialBody referenceBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == bodyNode.GetValue("referenceBody"));
                 if (referenceBody == null)
@@ -380,30 +476,20 @@ namespace CelestialBodyMover
 
                 Orbit bodyOrbit = body.orbit;
 
-                bodyOrbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomalyAtEpoch, epoch, referenceBody); // calls Init()
+                bodyOrbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomaly, epoch, referenceBody);
 
-                double meanMotion = Math.Sqrt(body.gravParameter / Math.Pow(Math.Abs(semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits. guaranteed to be defined as we removed parabolic orbits when saving
-                bodyOrbit.meanAnomaly = (bodyOrbit.meanAnomalyAtEpoch + meanMotion * (UT - epoch)) % tau; // Init() just sets meanAnomaly to meanAnomalyAtEpoch, so we need to fix it
+                //double meanMotion = Math.Sqrt(body.gravParameter / Math.Pow(Math.Abs(semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits. guaranteed to be defined as we removed parabolic orbits when saving
+                //bodyOrbit.meanAnomaly = (bodyOrbit.meanAnomalyAtEpoch + meanMotion * (UT - epoch)) % tau; // Init() just sets meanAnomaly to meanAnomalyAtEpoch, so we need to fix it
 
                 body.rotationPeriod = rotationPeriod;
                 body.initialRotation = initialRotation;
+                body.rotationAngle = (initialRotation - 360d * (1d / rotationPeriod) * epoch) % 360d; // get the proper rotationAngle for this initialRotation
                 Util.Log($"Loading orbit for body {body.name}: " + log);
 
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
 
             Util.Log($"Loaded orbits from {saveNode}");
-        }
-
-        private void FixParabolic(ref Orbit orbit)
-        {
-            if (orbit.eccentricity == 1d)
-            {
-                orbit.eccentricity = 1d - 1e-9; // decrease parabolic orbits to be highly eccentric
-                Util.LogWarning($"Orbit around {orbit.referenceBody} was parabolic, changing eccentricity to {orbit.eccentricity} to avoid issues with orbit calculations");
-
-                orbit.semiMajorAxis = -orbit.referenceBody.gravParameter / (2d * orbit.orbitalEnergy); // we need to use this definition because only orbitalEnergy is actually recalculated in UpdateFromFixedVectors
-            }
         }
 
         // event function order: https://docs.unity3d.com/560/Documentation/Manual/ExecutionOrder.html
@@ -417,33 +503,83 @@ namespace CelestialBodyMover
                 firstLoad = false;
             }
 
-            if (debugMode)
+            if (settings.debugMode)
             {
-                CheatOptions.InfinitePropellant = true;
-                CheatOptions.InfiniteElectricity = true;
-                CheatOptions.IgnoreMaxTemperature = true;
-                CheatOptions.NoCrashDamage = true;
-                CheatOptions.UnbreakableJoints = true;
-                CheatOptions.IgnoreEVAConstructionMassLimit = true;
-                CheatOptions.IgnoreKerbalInventoryLimits = true;
+                if (!CheatOptions.InfinitePropellant) CheatOptions.InfinitePropellant = true;
+                if (!CheatOptions.InfiniteElectricity) CheatOptions.InfiniteElectricity = true;
+                if (!CheatOptions.IgnoreMaxTemperature) CheatOptions.IgnoreMaxTemperature = true;
+                if (!CheatOptions.NoCrashDamage) CheatOptions.NoCrashDamage = true;
+                if (!CheatOptions.UnbreakableJoints) CheatOptions.UnbreakableJoints = true;
+                if (!CheatOptions.IgnoreEVAConstructionMassLimit) CheatOptions.IgnoreEVAConstructionMassLimit = true;
+                if (!CheatOptions.IgnoreKerbalInventoryLimits) CheatOptions.IgnoreKerbalInventoryLimits = true;
             }
+
+            if (!isActive && !forceVector.IsZero()) forceVector = Vector3d.zero;
 
             Vessel vessel = FlightGlobals.ActiveVessel;
-            if (isActive && !FlightDriver.Pause && HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && !vessel.HoldPhysics && !vessel.mainBody.isStar)
+            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && !vessel.mainBody.isStar)
             {
-                radiusVec = vessel.mainBody.position - vessel.GetWorldPos3D(); // vector from vessel to body
-                if (isFrozen)
+                if (isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
                 {
-                    MakeVesselStationary();
-                    forceVector = GetVesselThrust();
-                }
-                else
-                {
-                    forceVector = GetGravitationalForce(radiusVec);
+                    radiusVec = vessel.mainBody.position - vessel.GetWorldPos3D(); // vector from vessel to body
+                    if (isFrozen) // TODO: make it so that when the player becomes unfrozen, the vessel's orbit to the body is reset to what it was originally (otherwise itll drift)
+                    {
+                        MakeVesselStationary();
+                        forceVector = GetVesselThrust();
+                    }
+                    else
+                    {
+                        forceVector = GetGravitationalForce(-radiusVec); // radiusVec here needs to be from body to vessel
+                    }
+
+                    if (!forceVector.IsZero()) MovePlanet(forceVector, isFrozen, radiusVec);
                 }
 
-                if (!forceVector.IsZero()) MovePlanet(forceVector, isFrozen, radiusVec);
+                bool CheckRendererAvailable(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
+                if (displayLines && (CheckRendererAvailable(radialLineRenderer) && CheckRendererAvailable(normalLineRenderer) && CheckRendererAvailable(progradeLineRenderer)))
+                {
+                    //Util.Log($"DRAWING LINES");
+
+                    radialLineRenderer?.Hide(false);
+                    normalLineRenderer?.Hide(false);
+                    progradeLineRenderer?.Hide(false);
+
+                    radialLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    normalLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    progradeLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+
+                    GetForceDirections(vessel.mainBody, out Vector3d radial, out Vector3d normal, out Vector3d transverse);
+                    radialLineRenderer.Draw(vessel.mainBody, radial, "Radial", Color.blue, !justResetLines);
+                    normalLineRenderer.Draw(vessel.mainBody, normal, "Normal", Color.magenta, !justResetLines);
+                    progradeLineRenderer.Draw(vessel.mainBody, transverse, "Prograde", Color.yellow, !justResetLines);
+                }
+
+                if (displayLines && !forceVector.IsZero() && (needForceLineReset || CheckRendererAvailable(forceLineRenderer)))
+                {
+                    forceLineRenderer?.Hide(false);
+                    forceLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    forceLineRenderer.Draw(vessel.mainBody, forceVector, "Force", Color.red, !justResetLines);
+                }
             }
+
+            bool CheckRendererHiding(MapLineRenderer renderer) => renderer != null && !renderer.IsHiding;
+            if ((CheckRendererHiding(radialLineRenderer) && CheckRendererHiding(normalLineRenderer) && CheckRendererHiding(progradeLineRenderer)) && (HighLogic.LoadedScene != GameScenes.FLIGHT || !displayLines))
+            {
+                //Util.Log($"CLEARING LINES");
+
+                radialLineRenderer?.Hide(true);
+                normalLineRenderer?.Hide(true);
+                progradeLineRenderer?.Hide(true);
+                justResetLines = true;
+            }
+            else if (CheckRendererHiding(forceLineRenderer) && (HighLogic.LoadedScene != GameScenes.FLIGHT || !displayLines || forceVector.IsZero()))
+            {
+                forceLineRenderer?.Hide(true);
+                justResetLines = true;
+            }
+
+            justResetLines = false;
+            needForceLineReset = false;
         }
 
         void OnGUI()
@@ -455,6 +591,7 @@ namespace CelestialBodyMover
 
                 mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "Celestial Body Mover", GUILayout.Width(300));
                 ClampToScreen(ref mainRect);
+                Tooltip.Instance?.ShowTooltip(id0);
 
                 mainRectPos.x = mainRect.xMin;
                 mainRectPos.y = mainRect.yMin;
@@ -479,13 +616,13 @@ namespace CelestialBodyMover
 
         private void MakeMainWindow(int id)
         {
-            string buttonText = isActive ? "Deactivate CBM" : "Activate CBM";
-            if (GUILayout.Button(buttonText))
+            string activeText = isActive ? "Deactivate CBM" : "Activate CBM";
+            if (GUILayout.Button(activeText))
             {
                 isActive = !isActive;
                 needWindowChange = true;
 
-                Util.Log(isActive ? "CBM Activated" : "CBM Deactivated");
+                //Util.Log(isActive ? "CBM Activated" : "CBM Deactivated");
             }
 
             double currentUT = Planetarium.GetUniversalTime();
@@ -495,21 +632,27 @@ namespace CelestialBodyMover
                 CelestialBody body = vessel.mainBody;
                 Orbit orbit = body.orbit;
 
-                void Box(string value)
+                void Box(string value, string boxTooltip = "")
                 {
                     GUILayout.BeginVertical();
                     GUILayout.Space(5); // Box is weirdly offset, need to shift it down
-                    GUILayout.Box(value);
+                    GUILayout.Box(new GUIContent(value, boxTooltip), GUILayout.ExpandWidth(true));
                     GUILayout.EndVertical();
                 }
 
-                void LabelValue(string label, string value, bool includeSpace = true)
+                void LabelValue(string label, string value, string boxTooltip = "", string labelToolTip = "", bool includeSpace = true)
                 {
                     if (includeSpace) GUILayout.Space(5);
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label(label);
-                    Box(value);
+                    GUILayout.Label(new GUIContent(label, labelToolTip), GUILayout.ExpandWidth(true));
+                    Box(value, boxTooltip);
                     GUILayout.EndHorizontal();
+                }
+
+                void LabelValueDouble(string label, double value, string unit, string labelTooltip = "", bool includeSpace = true)
+                {
+                    // TODO: make decimals configurable
+                    LabelValue(label, $"{value:G5}{unit}", $"{value:G17}{unit}", labelTooltip, includeSpace);
                 }
 
                 void DrawLine()
@@ -526,6 +669,11 @@ namespace CelestialBodyMover
                     if (GUILayout.Button(frozenButton))
                     {
                         isFrozen = !isFrozen;
+                        if (!isFrozen && settings.killThrottleOnUnfreeze)
+                        {
+                            FlightInputHandler.state.mainThrottle = 0f;
+                            MakeVesselStationary(); // just for a frame
+                        }
                         needWindowChange = true;
                         if (vessel.vesselTransform == null)
                         {
@@ -535,26 +683,23 @@ namespace CelestialBodyMover
                         {
                             currentPos = vessel.vesselTransform.position;
 
-                            Util.Log($"currentPos: {currentPos}");
+                            //Util.Log($"currentPos: {currentPos}");
                         }
 
-                        Util.Log(isFrozen ? "Craft Frozen" : "Craft Unfrozen");
+                        //Util.Log(isFrozen ? "Craft Frozen" : "Craft Unfrozen");
                     }
 
-                    const double epsilon = 1e-3d;
+                    const double tolerance = 1e-3d;
 
-                    // TODO: make decimals configurable
+                    string forceText = isFrozen ? $"Thrust:" : $"Gravitational Force:";
+                    LabelValue(forceText, $"{forceVector.magnitude:N2}N");
 
-                    string forceText = isFrozen ? $"Thrust on Body:" : $"Gravitational Force on Body:";
-                    LabelValue(forceText, $"{forceVector.magnitude:F2}N");
-
-                    // TODO: add resetwindow here
                     if (isFrozen)
                     {
-                        LabelValue("Vessel Terrain Altitude", $"{vessel.heightFromTerrain:F2}m");
+                        LabelValueDouble("Vessel Terrain Altitude", vessel.heightFromTerrain, "m", $"Threshold is {settings.maxSurfaceHeight:G}m");
 
-                        bool canUseForce = ThrustValid(vessel);
-                        LabelValue("Thrust Is Applied?", $"{canUseForce}");
+                        bool canUseForce = HeightValid(vessel) && !InRailsWarp() && alignmentToCenter > 0d;
+                        LabelValue("Thrust Is Applied?", $"{canUseForce}", $"Must be a valid height ({HeightValid(vessel)}), not in rails warp ({!InRailsWarp()}), and thrust must be pointing towards the center ({alignmentToCenter > 0d})");
                     }
                     else
                     {
@@ -562,59 +707,52 @@ namespace CelestialBodyMover
                         LabelValue("Gravitational Force Is Applied?", $"{canUseForce}");
                     }
 
-                    // TODO: add resetwindow here
                     if (!forceVector.IsZero())
                     {
-                        LabelValue($"Acceleration of body:", $"{bodyAccel.magnitude:F2}m/s\u00B2");
-
-                        // TODO: show alignment of force with prograde, normal, and radial directions of body orbit
-
-                        // TODO: add resetwindow here
                         GUILayout.Space(10);
-                        string alignmentCenterText = "Force Alignment: ";
                         if (alignmentToCenter <= 0d)
                         {
-                            alignmentCenterText += $"Force not pointing towards body";
-                            GUILayout.Label(alignmentCenterText);
-                        }
-                        else if (!isFrozen || alignmentToCenter > 1d - epsilon)
-                        {
-                            alignmentCenterText += $"Force fully aligned with center of body";
-                            GUILayout.Label(alignmentCenterText);
+                            GUILayout.Label(new GUIContent("Force not aligned", "Force not pointing towards body"));
                         }
                         else
                         {
-                            double angleToCenter = Math.Acos(alignmentToCenter) * radToDeg;
-                            double effectiveThrust = forceVector.magnitude * alignmentToCenter;
-                            alignmentCenterText += $"Force offset from center of body by an angle of:";
+                            GetForceDirections(forceVector, body, out double forceRadial, out double forceNormal, out double forceTransverse);
 
-                            GUILayout.BeginHorizontal();
-                            GUILayout.Label(alignmentCenterText);
-                            Box($"{angleToCenter:F2}\u00B0");
-                            GUILayout.Label("with an effective thrust towards the center of:");
-                            Box($"{effectiveThrust:F2}N");
-                            GUILayout.EndHorizontal();
+                            string radialText = forceRadial >= 0d ? "Radial-Out Force:" : "Radial-In Force:";
+                            LabelValueDouble(radialText, Math.Abs(forceRadial), "N");
+                            string normalText = forceNormal >= 0d ? "Normal Force:" : "Anti-Normal Force:";
+                            LabelValueDouble(normalText, Math.Abs(forceNormal), "N");
+                            string transverseText = forceTransverse >= 0d ? "Prograde Force:" : "Retrograde Force:";
+                            LabelValueDouble(transverseText, Math.Abs(forceTransverse), "N");
 
-                            GUILayout.Space(10);
-                            string alignmentAxisText = "Torque: ";
-                            if (Math.Abs(alignmentToAxis) > 1d - epsilon)
+                            LabelValueDouble("Acceleration:", bodyAccel.magnitude, "m/s\u00B2");
+
+                            if (!isFrozen || alignmentToCenter > 1d - tolerance)
                             {
-                                alignmentAxisText += $"Force fully aligned with axis of body, no torque";
-                                GUILayout.Label(alignmentAxisText);
+                                GUILayout.Label(new GUIContent("Force fully aligned", "Force fully aligned with center of body"));
                             }
                             else
                             {
-                                double angleToAxis = Math.Acos(alignmentToAxis) * radToDeg;
-                                alignmentAxisText += $"Torque offset from axis of body by an angle of:";
+                                double angleToCenter = Math.Acos(alignmentToCenter) * radToDeg;
+                                double effectiveThrust = forceVector.magnitude * alignmentToCenter;
 
-                                GUILayout.BeginHorizontal();
-                                GUILayout.Label(alignmentAxisText);
-                                Box($"{angleToAxis:F2}\u00B0");
-                                GUILayout.Label("leading to a torque of:");
-                                Box($"{torqueAlongAxis:F2}Nm");
-                                GUILayout.EndHorizontal();
+                                LabelValueDouble("Force Alignment Offset:", angleToCenter, "\u00B0", "The angle that the force is offset from the center by");
+                                LabelValueDouble("Effective Thrust:", effectiveThrust, "N", "The component of force pointing towards the center");
 
-                                LabelValue($"Angular Acceleration of body:", $"{bodyAngularAccel * radToDeg:F2}\u00B0/s\u00B2");
+                                GUILayout.Space(10);
+                                if (Math.Abs(alignmentToAxis) > 1d - tolerance)
+                                {
+                                    GUILayout.Label(new GUIContent("Torque not aligned", "Force fully aligned with axis of body, no torque"));
+                                }
+                                else
+                                {
+                                    double angleToAxis = Math.Acos(alignmentToAxis) * radToDeg;
+
+                                    LabelValueDouble("Torque Alignment Offset:", angleToAxis, "\u00B0", "The angle that the torque is offset from the axis by");
+                                    LabelValueDouble("Torque:", torqueAlongAxis, "Nm", "The component of torque perpendicular to the axis");
+
+                                    LabelValueDouble($"Angular Acceleration:", bodyAngularAccel * radToDeg, "\u00B0/s\u00B2");
+                                }
                             }
                         }
                     }
@@ -623,58 +761,138 @@ namespace CelestialBodyMover
                 DrawLine();
 
                 GUILayout.Label("Body Details:");
-                LabelValue("Body:", body.displayName.LocalizeRemoveGender(), false);
-                LabelValue("Rotation Period:", $"{body.rotationPeriod:F2}s");
-                LabelValue("Rotation Angle", $"{body.rotationAngle:F2}\u00B0");
+                LabelValue("Body:", body.displayName.LocalizeRemoveGender(), includeSpace: false);
+                LabelValueDouble("Rotation Period:", body.rotationPeriod, "s");
+                LabelValueDouble("Rotation Angle:", body.rotationAngle, "\u00B0");
+                LabelValueDouble("Mass:", body.Mass, "kg");
 
                 DrawLine();
 
                 GUILayout.Space(10);
+
+                string refBody = orbit.referenceBody.displayName.LocalizeRemoveGender();
+                double velocity = orbit.getOrbitalVelocityAtUT(currentUT).magnitude;
                 GUILayout.Label("Body Orbit Details:");
-                LabelValue("Altitude:", $"{orbit.altitude:F2}m", false);
-                LabelValue("Velocity:", $"{orbit.getOrbitalVelocityAtUT(currentUT).magnitude:F2}m/s");
-                LabelValue("Apoapsis:", $"{orbit.ApR:F2}m");
-                LabelValue("Periapsis:", $"{orbit.PeR:F2}m");
-                LabelValue("Eccentricity:", $"{orbit.eccentricity:F5}");
-                LabelValue("Period:", $"{orbit.period:F2}s");
-                LabelValue("Inclination:", $"{orbit.inclination:F2}\u00B0");
-                LabelValue("LAN:", $"{orbit.LAN:F2}\u00B0");
-                LabelValue("AoP:", $"{orbit.argumentOfPeriapsis:F2}\u00B0");
-                LabelValue("Mean Anomaly:", $"{orbit.meanAnomaly * radToDeg:F2}\u00B0");
+                LabelValueDouble("Current Altitude:", orbit.radius, "m", $"Includes the radius of {refBody}", false);
+                LabelValueDouble("Velocity:", velocity, "m/s");
+                LabelValueDouble("Apoapsis:", orbit.ApR, "m");
+                LabelValueDouble("Periapsis:", orbit.PeR, "m");
+                LabelValueDouble("Eccentricity:", orbit.eccentricity, "");
+                LabelValueDouble("Period:", orbit.period, "s"); // TODO: add format year but make it toggleable
+                LabelValueDouble("Inclination:", orbit.inclination, "\u00B0");
+                LabelValueDouble("LAN:", orbit.LAN, "\u00B0");
+                LabelValueDouble("AoP:", orbit.argumentOfPeriapsis, "\u00B0");
+                LabelValueDouble("Mean Anomaly:", orbit.meanAnomaly * radToDeg, "\u00B0");
                 //Util.Log($"meanAnomaly: {orbit.meanAnomaly * radToDeg}");
-                LabelValue("Reference Body", $"{orbit.referenceBody.displayName.LocalizeRemoveGender()}");
-            }
+                LabelValue("Reference Body", $"{refBody}");
 
-            GUILayout.Space(10);
+                GUILayout.Space(10);
 
-            if (GUILayout.Button("Reset All Orbits"))
-            {
-                LoadOrbitDetails(Path.Combine(SettingsFolder, "originalOrbits.cfg"));
-            }
-
-            GUILayout.Space(10);
-
-            if (debugMode)
-            {
-                if (GUILayout.Button("TESTORBIT"))
+                if (GUILayout.Button("Reset All Orbits"))
                 {
-                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                    Orbit orbit = testBody.orbit;
-                    orbit.SetOrbit(orbit.inclination, .5, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
-                    double meanMotion = Math.Sqrt(testBody.gravParameter / Math.Pow(Math.Abs(orbit.semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits.
-                    orbit.meanAnomalyAtEpoch = (orbit.meanAnomaly - meanMotion * (currentUT - orbit.epoch)) % tau; // set new initial meanAnomaly to match period
+                    LoadOrbitDetails(Path.Combine(PluginDataFolder, "originalOrbits.cfg"));
                 }
 
-                if (GUILayout.Button("TESTROTATION"))
+                GUILayout.Space(10);
+
+                string displayLineText = displayLines ? "Hide Lines" : "Display Lines";
+                if (GUILayout.Button(displayLineText))
                 {
-                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                    testBody.rotationPeriod = 12345d;
-                    testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
+                    displayLines = !displayLines;
                 }
+
+                GUILayout.Space(10);
+
+                if (settings.debugMode)
+                {
+                    // TODO test these again
+                    if (GUILayout.Button("TESTORBIT"))
+                    {
+                        CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                        Orbit testOrbit = testBody.orbit;
+                        testOrbit.SetOrbit(testOrbit.inclination, .5, testOrbit.semiMajorAxis, testOrbit.LAN, testOrbit.argumentOfPeriapsis, testOrbit.meanAnomalyAtEpoch, testOrbit.epoch, testOrbit.referenceBody);
+                        //double meanMotion = Math.Sqrt(testBody.gravParameter / Math.Pow(Math.Abs(testOrbit.semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits.
+                        //testOrbit.meanAnomalyAtEpoch = (testOrbit.meanAnomaly - meanMotion * (currentUT - testOrbit.epoch)) % tau; // set new initial meanAnomaly to match period
+                    }
+
+                    if (GUILayout.Button("TESTROTATION"))
+                    {
+                        CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                        testBody.rotationPeriod = 12345d;
+                        testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
+                    }
+                }
+
+                Tooltip.Instance?.RecordTooltip(id);
+                GUI.DragWindow();
+                ResetWindow(ref needWindowChange, ref mainRect);
+            }
+        }
+
+        //private string FormatTime(double t)
+        //{
+        //    // TODO, add years? would have to be similar to useHomeSolarDay (try KSPUtil.dateTimeFormatter.Year?)
+        //    int days = (int)Math.Floor(t / Math.Round(solarDayLength)); // round to avoid stuff like 3d 24h 0m 0s, TODO this isnt working
+        //    t -= days * Math.Round(solarDayLength);
+        //    int hours = (int)Math.Floor(t / (60d * 60d));
+        //    t -= hours * 60d * 60d;
+        //    int minutes = (int)Math.Floor(t / 60d);
+        //    t -= minutes * 60d;
+        //    if (days > 0d)
+        //        return $"{days}d {hours}h {minutes}m {FormatDecimals(t)}s";
+        //    else if (hours > 0d)
+        //        return $"{hours}h {minutes}m {FormatDecimals(t)}s";
+        //    else if (minutes > 0d)
+        //        return $"{minutes}m {FormatDecimals(t)}s";
+        //    return $"{FormatDecimals(t)}s";
+        //}
+
+        private void GetForceDirections(CelestialBody body, out Vector3d radial, out Vector3d normal, out Vector3d transverse)
+        {
+            double currentUT = Planetarium.GetUniversalTime();
+
+            if (body == null || body.orbit == null)
+            {
+                Util.LogError($"body or body.orbit is null in GetForceDirections (body: {body}, body.orbit: {body?.orbit})");
+                radial = Vector3d.zero;
+                normal = Vector3d.zero;
+                transverse = Vector3d.zero;
+                return;
             }
 
-            GUI.DragWindow();
-            ResetWindow(ref needWindowChange, ref mainRect);
+            Orbit orbit = body.orbit;
+            Orbit fakeOrbit = new Orbit();
+
+            const double epsilon = 1e-9d;
+            if (orbit.inclination > epsilon && Math.Abs(orbit.inclination - 180d) > epsilon)
+            {
+                fakeOrbit = orbit;
+            }
+            else
+            {
+                // TODO test this
+                double newInclination;
+                if (orbit.inclination <= epsilon) newInclination = epsilon;
+                else newInclination = 180d - epsilon;
+
+                fakeOrbit.SetOrbit(newInclination, orbit.eccentricity, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
+            }
+
+            radial = fakeOrbit.Radial(currentUT);
+            normal = -fakeOrbit.Normal(currentUT); // use negative bc KSP gives left handed stuff
+            transverse = fakeOrbit.Prograde(currentUT);
+
+            //Util.Log($"Force directions: Radial: {radial}, radial2: {radial2}, Normal: {normal}, normal2: {normal2}, Transverse: {transverse}, transverse2: {transverse2}");
+            //Util.Log($"forceVector: {forceVector}, body.angularVelocity.normalized: {body.angularVelocity.normalized}");
+        }
+
+        private void GetForceDirections(Vector3d forceVector, CelestialBody body, out double forceRadial, out double forceNormal, out double forceTransverse)
+        {
+            GetForceDirections(body, out Vector3d radial, out Vector3d normal, out Vector3d transverse);
+
+            forceRadial = Vector3d.Dot(forceVector, radial);
+            forceNormal = Vector3d.Dot(forceVector, normal);
+            forceTransverse = Vector3d.Dot(forceVector, transverse);
         }
 
         private void MakeVesselStationary()
@@ -685,13 +903,15 @@ namespace CelestialBodyMover
             vessel.SetPosition(currentPos, true);
         }
 
-        private bool ThrustValid(Vessel vessel) => vessel.heightFromTerrain < Instance.settings.maxSurfaceHeight || vessel.LandedOrSplashed;
+        private bool HeightValid(Vessel vessel) => vessel.heightFromTerrain < settings.maxSurfaceHeight || vessel.LandedOrSplashed;
+
+        private bool InRailsWarp() => TimeWarp.CurrentRate != 1f && TimeWarp.WarpMode == TimeWarp.Modes.HIGH; // mode.high is non-physics time warp
 
         private Vector3d GetVesselThrust()
         {
             Vessel vessel = FlightGlobals.ActiveVessel;
 
-            if (ThrustValid(vessel))
+            if (!HeightValid(vessel))
             {
                 //Util.Log($"Altitude too high (vessel.heightFromTerrain: {vessel.heightFromTerrain}, vessel.LandedOrSplashed: {vessel.LandedOrSplashed})");
                 return Vector3d.zero;
@@ -703,11 +923,11 @@ namespace CelestialBodyMover
 
             Vector3d vesselForward = vessel.GetTransform().up;
 
-            if (TimeWarp.CurrentRate != 1f && TimeWarp.WarpMode == TimeWarp.Modes.HIGH) // non-physics time warp
+            if (InRailsWarp()) // non-physics time warp
             {
                 //BackgroundThrustVessel bVessel = vessel.FindVesselModuleImplementing<BackgroundThrustVessel>();
                 //thrustVector = bVessel.Thrust;
-                thrustVector.Zero();
+                thrustVector = Vector3d.zero;
             }
             else
             {
@@ -747,6 +967,7 @@ namespace CelestialBodyMover
                                 thrustVector += transformThrust;
                                 //thrustVector2 += transformThrust2;
 
+                                //Util.Log($"transformThrust: {transformThrust}, thrustVector: {thrustVector}, thrustDirectionVector: {thrustDirectionVector}, cosineLosses: {cosineLosses}, tCurrentThrust: {tCurrentThrust}");
                                 //Util.Log($"transformThrust: {transformThrust}, transformThrust2: {transformThrust2}, thrustVector: {thrustVector}, thrustVector2: {thrustVector2}, thrustDirectionVector: {thrustDirectionVector}, cosineLosses: {cosineLosses}, tCurrentThrust: {tCurrentThrust}");
                             }
                         }
@@ -758,6 +979,8 @@ namespace CelestialBodyMover
                     //}
                 }
             }
+
+            //Util.Log($"thrustVector: {thrustVector}, magnitude: {thrustVector.magnitude}");
 
             if (thrustVector.IsZero())
             {
@@ -777,7 +1000,7 @@ namespace CelestialBodyMover
             double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
             CelestialBody body = vessel.mainBody;
 
-            Vector3d toBody = -radiusVec.normalized; // needs to be from body to vessel
+            Vector3d toBody = radiusVec.normalized;
             double radius = radiusVec.magnitude;
 
             double forceMagnitude = body.gravParameter * vesselMass / (radius * radius);
@@ -791,16 +1014,8 @@ namespace CelestialBodyMover
 
         private void MovePlanet(Vector3d forceVector, bool isFrozen, Vector3d radiusVec)
         {
-            Vessel vessel = FlightGlobals.ActiveVessel;
-            double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
-            CelestialBody body = vessel.mainBody;
-            double totalMass = body.Mass + vesselMass;
-            double currentUT = Planetarium.GetUniversalTime();
-            const double epsilon = 1e-3d;
-
             Vector3d thrustNormal = forceVector.normalized;
 
-            Orbit orbit = body.orbit;
             alignmentToCenter = isFrozen ? Vector3d.Dot(thrustNormal, radiusVec.normalized) : 1d; // if using gravitational force, its always aligned, although in the opposite direction to thrust
 
             if (alignmentToCenter <= 0d)
@@ -808,6 +1023,15 @@ namespace CelestialBodyMover
                 //Util.Log($"Thrust not pointing towards planet (alignmentToCenter: {alignmentToCenter})");
                 return;
             }
+
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            double vesselMass = vessel.totalMass * 1000d; // convert from tons to kg
+            CelestialBody body = vessel.mainBody;
+            Orbit orbit = body.orbit;
+            double totalMass = body.Mass + vesselMass;
+            double currentUT = Planetarium.GetUniversalTime();
+            const double tolerance = 1e-3d;
+            const double epsilon = 1e-9d;
 
             // TODO: add a way to change reference body if it gets in the hill sphere, would need to use world vectors instead of local
 
@@ -817,61 +1041,53 @@ namespace CelestialBodyMover
             Vector3d forceOnPlanet = thrustNormal * effectiveThrust;
             bodyAccel = forceOnPlanet / totalMass;
             Vector3d deltaV = bodyAccel * Time.fixedDeltaTime;
-            Vector3d position = orbit.getRelativePositionAtUT(currentUT);
-            Vector3d velocity = orbit.getOrbitalVelocityAtUT(currentUT);
+            Vector3d position = orbit.getRelativePositionAtUT(currentUT); // same as (orbit.getTruePositionAtUT(currentUT) - orbit.referenceBody.getTruePositionAtUT(currentUT)).xzy;
+            Vector3d velocity = orbit.getOrbitalVelocityAtUT(currentUT); // same as orbit.getOrbitalVelocityAtUT(currentUT) + orbit.referenceBody.GetFrameVelAtUT(currentUT) - orbit.referenceBody.GetFrameVelAtUT(currentUT);
 
             Vector3d newVelocity = velocity + deltaV;
 
-            orbit.UpdateFromStateVectors(position, newVelocity, orbit.referenceBody, orbit.epoch); // this gets harmony patched
+            //Util.Log($"altitude: {orbit.altitude + body.orbit.referenceBody.Radius}, position: {position}, position.magnitude: {position.magnitude}, velocity: {velocity}, newVelocity: {newVelocity}, newVelocity.magnitude: {newVelocity.magnitude}, deltaV: {deltaV}");
 
-            FixParabolic(ref orbit);
+            double AOP = orbit.argumentOfPeriapsis;
+            double meanAnomaly = orbit.meanAnomaly;
+            double eccentricity = orbit.eccentricity;
 
-            double meanMotion = Math.Sqrt(body.gravParameter / Math.Pow(Math.Abs(orbit.semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits.
-            orbit.meanAnomalyAtEpoch = (orbit.meanAnomaly - meanMotion * (currentUT - orbit.epoch)) % tau; // set new initial meanAnomaly to match period
+            orbit.UpdateFromStateVectors(position, newVelocity, orbit.referenceBody, currentUT); // use currentUT to set the epoch to now
 
-            if (alignmentToCenter > 1d - epsilon)
+            if (eccentricity < epsilon && Math.Abs(orbit.eccentricity - eccentricity) < epsilon) // AOP and meanAnomaly are not stable in circular orbits
             {
-                //Util.Log($"Thrust aligned with planet center, no torque (alignmentToCenter: {alignmentToCenter})");
-
-                //Util.Log($"forceVector: {forceVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, bodyAccel: {bodyAccel}");
-                //Util.Log($"velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, bodyAccel: {bodyAccel.magnitude}");
+                orbit.SetOrbit(orbit.inclination, orbit.eccentricity, orbit.semiMajorAxis, orbit.LAN, AOP, meanAnomaly, orbit.epoch, orbit.referenceBody);
             }
-            else
+
+            //Util.Log($"NEW position: {orbit.getRelativePositionAtUT(currentUT)}, NEW velocity: {orbit.getOrbitalVelocityAtUT(currentUT)}, meanAnomaly: {orbit.meanAnomaly}, argumentOfPeriapsis: {orbit.argumentOfPeriapsis}");
+
+            if (alignmentToCenter <= 1d - tolerance) // if not pointing towards center
             {
                 Vector3d axis = body.angularVelocity.normalized;
                 alignmentToAxis = Vector3d.Dot(thrustNormal, axis);
 
-                if (Math.Abs(alignmentToAxis) > 1d - epsilon)
-                {
-                    //Util.Log($"Thrust aligned with planet axis, no torque (alignmentToAxis: {alignmentToAxis})");
-
-                    //Util.Log($"forceVector: {forceVector}, alignmentToCenter: {alignmentToCenter}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, bodyAccel: {bodyAccel}");
-                    //Util.Log($"velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, bodyAccel: {bodyAccel.magnitude}");
-                }
-                else
+                if (1d - Math.Abs(alignmentToAxis) >= tolerance) // if not pointing at axis
                 {
                     Vector3d torque = Vector3d.Cross(radiusVec, forceVector);
                     torqueAlongAxis = Vector3d.Dot(torque, axis);
 
-                    double I = (0.4 * body.Mass * body.Radius * body.Radius) + vesselMass * radiusVec.magnitude * radiusVec.magnitude;
+                    double perpendicularRadius = Vector3d.Cross(axis, radiusVec).magnitude;
+                    double rotationalInertia = (0.4 * body.Mass * body.Radius * body.Radius) + vesselMass * perpendicularRadius * perpendicularRadius;
 
-                    bodyAngularAccel = torqueAlongAxis / I;
+                    bodyAngularAccel = torqueAlongAxis / rotationalInertia;
 
-                    Vector3d newAngularVelocity = body.angularVelocity + axis * (bodyAngularAccel * Time.fixedDeltaTime);
+                    Vector3d deltaAngularV = axis * (bodyAngularAccel * Time.fixedDeltaTime);
+                    Vector3d newAngularVelocity = body.angularVelocity + deltaAngularV;
 
                     double newPeriod = tau / newAngularVelocity.magnitude;
+                    //Util.Log($"rotationalInertia: {rotationalInertia}, bodyAngularAccel: {bodyAngularAccel}, torqueAlongAxis: {torqueAlongAxis}, Time.fixedDeltaTime: {Time.fixedDeltaTime}, body.angularVelocity: {body.angularVelocity} (mag: {body.angularVelocity.magnitude}), deltaAngularV: {deltaAngularV}, newAngularVelocity: {newAngularVelocity} (mag: {newAngularVelocity.magnitude}), body.rotationPeriod: {body.rotationPeriod}, newPeriod: {newPeriod}");
                     body.rotationPeriod = newPeriod; // angular velocity is set by rotation period in CBUpdate
                     body.initialRotation = (body.rotationAngle - 360d * (1d / newPeriod) * currentUT) % 360d; // work backwards from rotationAngle = (initialRotation + 360.0 * rotPeriodRecip * Planetarium.GetUniversalTime()) % 360.0;
-
-                    //Util.Log($"alignmentToCenter: {alignmentToCenter}, alignmentToAxis: {alignmentToAxis}, torque: {torque}, velocity: {velocity}, newVelocity: {newVelocity}, forceOnPlanet: {forceOnPlanet}, accel: {accel}, body.angularVelocity: {body.angularVelocity}, newAngularVelocity: {newAngularVelocity}, origPeriod: {origPeriod}, newPeriod: {newPeriod}, angularAccel: {angularAccel}");
-                    //Util.Log($"torque: {torque.magnitude}, velocity: {velocity.magnitude}, newVelocity: {newVelocity.magnitude}, forceOnPlanet: {forceOnPlanet.magnitude}, accel: {accel.magnitude}, body.angularVelocity: {body.angularVelocity.magnitude}, newAngularVelocity: {newAngularVelocity.magnitude}");
-                    //Util.Log($"I: {I}, torqueAlongAxis: {torqueAlongAxis}, forceOnPlanet: {forceOnPlanet.magnitude}, torque: {torque.magnitude}, axis: {axis}, body.Radius: {body.Radius}, radius.magnitude: {radiusVec.magnitude}");
+                    // rotationAngle is left unchanged
                 }
 
                 body.CBUpdate(); // make sure this gets called before we do anything else
             }
-
-            //Util.Log($"semiMajorAxis: {orbit.semiMajorAxis}, ApR: {orbit.ApR}, PeR: {orbit.PeR}, eccentricity: {orbit.eccentricity}, inclination: {orbit.inclination}, LAN: {orbit.LAN}, AOP: {orbit.argumentOfPeriapsis}, orbitalEnergy: {orbit.orbitalEnergy}, orbitalSpeed: {orbit.orbitalSpeed}");
         }
     }
 }

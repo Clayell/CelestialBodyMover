@@ -1,5 +1,7 @@
 MIT License
 
+Copyright (c) 2023, Martin Reverda (Nazfib) for TWP2 Renderer
+
 Copyright (c) 2026 Clayel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

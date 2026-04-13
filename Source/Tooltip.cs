@@ -1,0 +1,116 @@
+﻿// Adapted from RP-1's Tooltip (https://github.com/KSP-RO/RP-1/blob/master/Source/RP0/UI/Tooltip.cs), credit to @siimav
+// to use this:
+// put Tooltip.RecreateInstance(); in Start()
+// put Tooltip.Instance?.RecordTooltip(id); at the end of the window method
+// put Tooltip.Instance?.ShowTooltip(id); in OnGUI() after the GUILayout.Window call
+//
+// now add "new GUIContent" to the label/box/button/toggle/whatever
+// example: GUILayout.Label(new GUIContent("label", "tooltip"));
+// make sure it isnt GUILayout.Label(new GUIContent("label"), "tooltip"); KSP will think you're trying to declare a GUIStyle
+
+
+// TODO: don't regenerate every frame if the size of the box doesnt actually need to be changed
+
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace CelestialBodyMover
+{
+    public class Tooltip
+    {
+        private const float TooltipMaxWidth = 200f;
+        private const double TooltipShowDelay = 250; // ms
+
+        private static readonly int _tooltipWindowId = "CBMTooltip".GetHashCode();
+        private static GUIStyle _tooltipStyle;
+        private static Tooltip _instance;
+
+        private readonly Dictionary<int, string> _windowTooltipTexts = new Dictionary<int, string>();
+        private Rect _tooltipRect;
+        private DateTime _tooltipBeginDt;
+        private bool _isTooltipChanged;
+
+        public static Tooltip Instance
+        {
+            get
+            {
+                if (_instance == null) RecreateInstance();
+                return _instance;
+            }
+            private set => _instance = value;
+        }
+
+        private Tooltip() { }
+
+        public static void RecreateInstance()
+        {
+            if (_tooltipStyle == null)
+            {
+                _tooltipStyle = new GUIStyle(HighLogic.Skin.label);
+                _tooltipStyle.normal.textColor = new Color32(224, 224, 224, 255);
+                _tooltipStyle.padding = new RectOffset(3, 3, 3, 3);
+                _tooltipStyle.alignment = TextAnchor.MiddleCenter;
+            }
+
+            // The texture needs to be re-applied after every scene change
+            Texture2D backTex = new Texture2D(1, 1, TextureFormat.ARGB32, false);
+            backTex.SetPixel(0, 0, new Color(0.5f, 0.5f, 0.5f));
+            backTex.Apply();
+            _tooltipStyle.normal.background = backTex;
+
+            Instance = new Tooltip();
+        }
+
+        public void RecordTooltip(int windowId, bool skipOnEvent = true, string overrideTooltip = null)
+        {
+            if (skipOnEvent && Event.current.type != EventType.Repaint) return;
+
+            if (!_windowTooltipTexts.TryGetValue(windowId, out string tooltipText))
+            {
+                tooltipText = string.Empty;
+            }
+
+            string newTooltipStr = overrideTooltip != null ? overrideTooltip : GUI.tooltip;
+            if (tooltipText != newTooltipStr)
+            {
+                _isTooltipChanged = true;
+                if (!string.IsNullOrEmpty(tooltipText))
+                {
+                    _tooltipBeginDt = DateTime.UtcNow;
+                }
+                _windowTooltipTexts[windowId] = newTooltipStr;
+            }
+        }
+
+        public void ShowTooltip(int windowId, TextAnchor contentAlignment = TextAnchor.MiddleCenter)
+        {
+            if (_windowTooltipTexts.TryGetValue(windowId, out string tooltipText) && !string.IsNullOrEmpty(tooltipText) &&
+                (DateTime.UtcNow - _tooltipBeginDt).TotalMilliseconds > TooltipShowDelay)
+            {
+                if (_isTooltipChanged)
+                {
+                    var c = new GUIContent(tooltipText);
+                    _tooltipStyle.CalcMinMaxWidth(c, out _, out float width);
+                    _tooltipStyle.alignment = contentAlignment;
+
+                    width = Math.Min(width, TooltipMaxWidth);
+                    float height = _tooltipStyle.CalcHeight(c, TooltipMaxWidth);
+                    _tooltipRect = new Rect(
+                        Math.Min(Screen.width - width, Input.mousePosition.x + 15),
+                        Math.Min(Screen.height - height, Screen.height - Input.mousePosition.y + 10),
+                        width, height);
+                    _isTooltipChanged = false;
+                }
+
+                GUI.Window(
+                    _tooltipWindowId,
+                    _tooltipRect,
+                    (_) => { },
+                    tooltipText,
+                    _tooltipStyle);
+                GUI.BringWindowToFront(_tooltipWindowId);
+            }
+        }
+    }
+}
