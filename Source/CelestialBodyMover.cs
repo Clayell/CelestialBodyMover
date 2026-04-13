@@ -104,7 +104,7 @@ namespace CelestialBodyMover
                 else if (angle > 1d)
                 {
                     //Util.Log("resetting line");
-                    needForceLineReset = true;
+                    needForceLineReset = false;
                 }
                 _forceVector = value;
             }
@@ -145,6 +145,22 @@ namespace CelestialBodyMover
         double torqueAlongAxis;
         double bodyAngularAccel;
 
+        CelestialBody _mainBody;
+        CelestialBody mainBody
+        {
+            get => _mainBody;
+            set
+            {
+                if (_mainBody != value)
+                {
+                    //Util.Log($"mainBody changed from {_mainBody?.name} to {value?.name}, resetting window");
+                    needWindowChange = true;
+                    HideAllRenderers();
+                }
+                _mainBody = value;
+            }
+        }
+
         Vector3d currentPos;
 
         Rect mainRect = new Rect(0, 0, -1, -1);
@@ -158,15 +174,11 @@ namespace CelestialBodyMover
         MapLineRenderer normalLineRenderer;
         MapLineRenderer progradeLineRenderer;
         MapLineRenderer forceLineRenderer;
-        bool justResetLines = false;
-        bool needForceLineReset = false;
+        bool? needForceLineReset = null; // visibilityChange true or false
         [KSPField(isPersistant = true)]
         bool displayLines = false;
 
         // TODO: use property setters and fields to detect when the window needs to be reset
-
-        //ScenarioModule scenarioRoot = new ScenarioModule();
-        //ConfigNode root = new ConfigNode();
 
         static string PluginDataFolder;
 
@@ -303,7 +315,11 @@ namespace CelestialBodyMover
 
         public override void OnLoad(ConfigNode root)
         {
-            LoadOrbitDetails(root, "savedOrbits");
+            if (!LoadOrbitDetails(root, "savedOrbits"))
+            {
+                Util.LogError($"Failed to load saved orbits, loading original orbits");
+                LoadOrbitDetails(Path.Combine(PluginDataFolder, "originalOrbits.cfg"));
+            }
 
             mainRect = new Rect(mainRectPos.x, mainRectPos.y, mainRect.width, mainRect.height);
         }
@@ -386,7 +402,7 @@ namespace CelestialBodyMover
             return;
         }
 
-        private void LoadOrbitDetails(string saveFile)
+        private bool LoadOrbitDetails(string saveFile)
         {
             string savePath = Path.Combine(PluginDataFolder, saveFile);
             Util.Log($"Loading orbits from {savePath}...");
@@ -394,14 +410,14 @@ namespace CelestialBodyMover
             if (!File.Exists(savePath))
             {
                 Util.LogError($"File {savePath} does not exist");
-                return;
+                return false;
             }
 
             ConfigNode root = ConfigNode.Load(savePath);
-            LoadOrbitDetails(root, Path.GetFileNameWithoutExtension(savePath));
+            return LoadOrbitDetails(root, Path.GetFileNameWithoutExtension(savePath));
         }
 
-        private void LoadOrbitDetails(ConfigNode root, string saveNode)
+        private bool LoadOrbitDetails(ConfigNode root, string saveNode)
         {
             Util.Log($"Loading orbits from {saveNode}...");
 
@@ -409,26 +425,30 @@ namespace CelestialBodyMover
             if (orbits == null)
             {
                 Util.LogError($"Failed to find ORBITS node in {root}");
-                return;
+                return false;
             }
             if (!int.TryParse(orbits.GetValue("numBodies"), out int numBodies))
             {
                 Util.LogError($"Failed to parse numBodies from {root}");
-                return;
+                return false;
             }
             if (!double.TryParse(orbits.GetValue("UT"), out double UT))
             {
                 Util.LogError($"Failed to parse UT from {root}");
-                return;
+                return false;
             }
 
             if (FlightGlobals.Bodies == null)
             {
                 Util.LogError($"FlightGlobals.Bodies is null");
-                return;
+                return false;
             }
 
-            if (numBodies != FlightGlobals.Bodies.Count) { Util.LogError($"numBodies ({numBodies}) does not match bodies count ({FlightGlobals.Bodies.Count})"); return; }
+            if (numBodies != FlightGlobals.Bodies.Count)
+            {
+                Util.LogError($"numBodies ({numBodies}) does not match bodies count ({FlightGlobals.Bodies.Count})");
+                return false;
+            }
 
             for (int i = 0; i < numBodies; i++)
             {
@@ -441,7 +461,7 @@ namespace CelestialBodyMover
                 ConfigNode bodyNode = orbits.GetNode(body.name);
                 if (bodyNode == null)
                 {
-                    Util.LogError($"Failed to find node for body {body.name} in {saveNode}");
+                    Util.LogError($"Failed to find node for body {body.name} in {root}");
                     continue;
                 }
 
@@ -450,7 +470,7 @@ namespace CelestialBodyMover
                 {
                     if (!double.TryParse(bodyNode.GetValue(value), out result))
                     {
-                        Util.LogError($"Failed to parse {value} for body {body.name} in {saveNode}");
+                        Util.LogError($"Failed to parse {value} for body {body.name} in {root}");
                         return false;
                     }
                     log += $"{value}: {result}, ";
@@ -467,7 +487,7 @@ namespace CelestialBodyMover
                 CelestialBody referenceBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == bodyNode.GetValue("referenceBody"));
                 if (referenceBody == null)
                 {
-                    Util.LogError($"Failed to parse {referenceBody} for body {body.name} in {saveNode}");
+                    Util.LogError($"Failed to parse {referenceBody} for body {body.name} in {root}");
                     continue;
                 }
 
@@ -478,9 +498,6 @@ namespace CelestialBodyMover
 
                 bodyOrbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomaly, epoch, referenceBody);
 
-                //double meanMotion = Math.Sqrt(body.gravParameter / Math.Pow(Math.Abs(semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits. guaranteed to be defined as we removed parabolic orbits when saving
-                //bodyOrbit.meanAnomaly = (bodyOrbit.meanAnomalyAtEpoch + meanMotion * (UT - epoch)) % tau; // Init() just sets meanAnomaly to meanAnomalyAtEpoch, so we need to fix it
-
                 body.rotationPeriod = rotationPeriod;
                 body.initialRotation = initialRotation;
                 body.rotationAngle = (initialRotation - 360d * (1d / rotationPeriod) * epoch) % 360d; // get the proper rotationAngle for this initialRotation
@@ -490,6 +507,7 @@ namespace CelestialBodyMover
             }
 
             Util.Log($"Loaded orbits from {saveNode}");
+            return true;
         }
 
         // event function order: https://docs.unity3d.com/560/Documentation/Manual/ExecutionOrder.html
@@ -517,48 +535,59 @@ namespace CelestialBodyMover
             if (!isActive && !forceVector.IsZero()) forceVector = Vector3d.zero;
 
             Vessel vessel = FlightGlobals.ActiveVessel;
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && !vessel.mainBody.isStar)
+            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null)
             {
-                if (isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
+                mainBody = vessel.mainBody;
+                Orbit vOrbit = vessel.orbit;
+                Util.Log($"inc: {vOrbit.inclination}, ecc: {vOrbit.eccentricity}, sma: {vOrbit.semiMajorAxis}, LAN: {vOrbit.LAN}, arg: {vOrbit.argumentOfPeriapsis}, M: {vOrbit.meanAnomaly}, epoch: {vOrbit.epoch}");
+                if (mainBody != null && !mainBody.isStar)
                 {
-                    radiusVec = vessel.mainBody.position - vessel.GetWorldPos3D(); // vector from vessel to body
-                    if (isFrozen) // TODO: make it so that when the player becomes unfrozen, the vessel's orbit to the body is reset to what it was originally (otherwise itll drift)
+                    if (isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
                     {
-                        MakeVesselStationary();
-                        forceVector = GetVesselThrust();
+                        radiusVec = mainBody.position - vessel.GetWorldPos3D(); // vector from vessel to body
+                        if (isFrozen) // note: if the spin of the planet is increased measureably, the orbit velocity will increase even if the surface velocity stays at 0, so the vessel can get flung off
+                        {
+                            MakeVesselStationary();
+                            forceVector = GetVesselThrust();
+                        }
+                        else
+                        {
+                            forceVector = GetGravitationalForce(-radiusVec); // radiusVec here needs to be from body to vessel
+                        }
+
+                        if (!forceVector.IsZero()) MovePlanet(forceVector, isFrozen, radiusVec);
                     }
-                    else
+
+                    bool CheckRendererAvailable(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
+                    if (displayLines && (CheckRendererAvailable(radialLineRenderer) && CheckRendererAvailable(normalLineRenderer) && CheckRendererAvailable(progradeLineRenderer)))
                     {
-                        forceVector = GetGravitationalForce(-radiusVec); // radiusVec here needs to be from body to vessel
+                        //Util.Log($"DRAWING LINES");
+
+                        radialLineRenderer?.Hide(false);
+                        normalLineRenderer?.Hide(false);
+                        progradeLineRenderer?.Hide(false);
+
+                        radialLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                        normalLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                        progradeLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+
+                        GetForceDirections(mainBody, out Vector3d radial, out Vector3d normal, out Vector3d transverse);
+                        radialLineRenderer.Draw(mainBody, radial, "Radial", Color.blue, true);
+                        normalLineRenderer.Draw(mainBody, normal, "Normal", Color.magenta, true);
+                        progradeLineRenderer.Draw(mainBody, transverse, "Prograde", Color.yellow, true);
                     }
 
-                    if (!forceVector.IsZero()) MovePlanet(forceVector, isFrozen, radiusVec);
-                }
-
-                bool CheckRendererAvailable(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
-                if (displayLines && (CheckRendererAvailable(radialLineRenderer) && CheckRendererAvailable(normalLineRenderer) && CheckRendererAvailable(progradeLineRenderer)))
-                {
-                    //Util.Log($"DRAWING LINES");
-
-                    radialLineRenderer?.Hide(false);
-                    normalLineRenderer?.Hide(false);
-                    progradeLineRenderer?.Hide(false);
-
-                    radialLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-                    normalLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-                    progradeLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-
-                    GetForceDirections(vessel.mainBody, out Vector3d radial, out Vector3d normal, out Vector3d transverse);
-                    radialLineRenderer.Draw(vessel.mainBody, radial, "Radial", Color.blue, !justResetLines);
-                    normalLineRenderer.Draw(vessel.mainBody, normal, "Normal", Color.magenta, !justResetLines);
-                    progradeLineRenderer.Draw(vessel.mainBody, transverse, "Prograde", Color.yellow, !justResetLines);
-                }
-
-                if (displayLines && !forceVector.IsZero() && (needForceLineReset || CheckRendererAvailable(forceLineRenderer)))
-                {
-                    forceLineRenderer?.Hide(false);
-                    forceLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-                    forceLineRenderer.Draw(vessel.mainBody, forceVector, "Force", Color.red, !justResetLines);
+                    if (displayLines && !forceVector.IsZero() && (needForceLineReset.HasValue || CheckRendererAvailable(forceLineRenderer)))
+                    {
+                        bool visibilityChanged = true;
+                        if (needForceLineReset.HasValue)
+                        {
+                            visibilityChanged = needForceLineReset.Value;
+                        }
+                        forceLineRenderer?.Hide(visibilityChanged);
+                        forceLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                        forceLineRenderer.Draw(mainBody, forceVector, "Force", Color.red, visibilityChanged);
+                    }
                 }
             }
 
@@ -570,16 +599,18 @@ namespace CelestialBodyMover
                 radialLineRenderer?.Hide(true);
                 normalLineRenderer?.Hide(true);
                 progradeLineRenderer?.Hide(true);
-                justResetLines = true;
             }
             else if (CheckRendererHiding(forceLineRenderer) && (HighLogic.LoadedScene != GameScenes.FLIGHT || !displayLines || forceVector.IsZero()))
             {
-                forceLineRenderer?.Hide(true);
-                justResetLines = true;
+                bool visibilityChanged = true;
+                if (needForceLineReset.HasValue)
+                {
+                    visibilityChanged = needForceLineReset.Value;
+                }
+                forceLineRenderer?.Hide(visibilityChanged);
             }
 
-            justResetLines = false;
-            needForceLineReset = false;
+            needForceLineReset = null;
         }
 
         void OnGUI()
@@ -614,6 +645,14 @@ namespace CelestialBodyMover
             }
         }
 
+        private void HideAllRenderers()
+        {
+            radialLineRenderer?.Hide(true);
+            normalLineRenderer?.Hide(true);
+            progradeLineRenderer?.Hide(true);
+            forceLineRenderer?.Hide(true);
+        }
+
         private void MakeMainWindow(int id)
         {
             string activeText = isActive ? "Deactivate CBM" : "Activate CBM";
@@ -627,9 +666,9 @@ namespace CelestialBodyMover
 
             double currentUT = Planetarium.GetUniversalTime();
             Vessel vessel = FlightGlobals.ActiveVessel;
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null)
+            CelestialBody body = vessel?.mainBody; // mainBody property is already set in Update()
+            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && body != null && !body.isStar)
             {
-                CelestialBody body = vessel.mainBody;
                 Orbit orbit = body.orbit;
 
                 void Box(string value, string boxTooltip = "")
@@ -704,7 +743,7 @@ namespace CelestialBodyMover
                     else
                     {
                         bool canUseForce = !vessel.LandedOrSplashed;
-                        LabelValue("Gravitational Force Is Applied?", $"{canUseForce}");
+                        LabelValue("Gravitational Force Is Applied?", $"{canUseForce}", "Vessel must not be landed or splashed");
                     }
 
                     if (!forceVector.IsZero())
@@ -727,6 +766,7 @@ namespace CelestialBodyMover
 
                             LabelValueDouble("Acceleration:", bodyAccel.magnitude, "m/s\u00B2");
 
+                            GUILayout.Space(10);
                             if (!isFrozen || alignmentToCenter > 1d - tolerance)
                             {
                                 GUILayout.Label(new GUIContent("Force fully aligned", "Force fully aligned with center of body"));
@@ -802,31 +842,39 @@ namespace CelestialBodyMover
                 }
 
                 GUILayout.Space(10);
+            }
+            else if (body != null && body.isStar)
+            {
+                GUILayout.Label($"Current body ({body.displayName.LocalizeRemoveGender()}) is a star, cannot use CBM");
+            }
 
-                if (settings.debugMode)
+            if (settings.debugMode)
+            {
+                // TODO test these again
+                if (GUILayout.Button("TESTORBIT"))
                 {
-                    // TODO test these again
-                    if (GUILayout.Button("TESTORBIT"))
+                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    if (testBody != null)
                     {
-                        CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
                         Orbit testOrbit = testBody.orbit;
                         testOrbit.SetOrbit(testOrbit.inclination, .5, testOrbit.semiMajorAxis, testOrbit.LAN, testOrbit.argumentOfPeriapsis, testOrbit.meanAnomalyAtEpoch, testOrbit.epoch, testOrbit.referenceBody);
-                        //double meanMotion = Math.Sqrt(testBody.gravParameter / Math.Pow(Math.Abs(testOrbit.semiMajorAxis), 3)); // abs(SMA) to allow for hyperbolic orbits.
-                        //testOrbit.meanAnomalyAtEpoch = (testOrbit.meanAnomaly - meanMotion * (currentUT - testOrbit.epoch)) % tau; // set new initial meanAnomaly to match period
                     }
+                }
 
-                    if (GUILayout.Button("TESTROTATION"))
+                if (GUILayout.Button("TESTROTATION"))
+                {
+                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    if (testBody != null)
                     {
-                        CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
                         testBody.rotationPeriod = 12345d;
                         testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
                     }
                 }
-
-                Tooltip.Instance?.RecordTooltip(id);
-                GUI.DragWindow();
-                ResetWindow(ref needWindowChange, ref mainRect);
             }
+
+            Tooltip.Instance?.RecordTooltip(id);
+            GUI.DragWindow();
+            ResetWindow(ref needWindowChange, ref mainRect);
         }
 
         //private string FormatTime(double t)

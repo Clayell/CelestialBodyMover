@@ -18,6 +18,8 @@
 
         // displayFormat follows https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-numeric-format-strings
 
+        // TODO just switch to a normal settings menu
+
         [GameParameters.CustomFloatParameterUI("Max Surface Height", toolTip = "When the craft is frozen, this is the max height that the vessel can be from the ground where thrust to move the body is still valid", minValue = 0f, maxValue = 200f, stepCount = 20)]
         public float maxSurfaceHeight = 20f;
 
