@@ -53,11 +53,14 @@ namespace CelestialBodyMover
 
         ToolbarControl toolbarControl = null;
 
-        GUISkin skin;
         GUIStyle lineStyle;
+        GUIStyle buttonStyle;
+        Texture2D settingsGear;
 
         [KSPField(isPersistant = true)]
-        bool isWindowOpen = false;
+        bool showMainWindow = false;
+        [KSPField(isPersistant = true)]
+        bool showSettingsWindow = false;
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
         bool isLoading = false;
         bool isBadUI = false;
@@ -164,11 +167,33 @@ namespace CelestialBodyMover
         Vector3d currentPos;
 
         Rect mainRect = new Rect(0, 0, -1, -1);
+        Rect settingsRect = new Rect(0, 0, -1, -1);
         [KSPField(isPersistant = true)]
         Vector2 mainRectPos = new Vector2(100, 100);
+        [KSPField(isPersistant = true)]
+        Vector2 settingsRectPos = new Vector2(200, 200);
         bool needWindowChange = false;
 
-        internal CBMSettings settings;
+        [KSPField(isPersistant = true)]
+        float maxSurfaceHeight = 20f;
+        [KSPField(isPersistant = true)]
+        internal float lineLengthExponent = 5f;
+        [KSPField(isPersistant = true)]
+        bool killThrottleOnUnfreeze = true;
+        [KSPField(isPersistant = true)]
+        bool _debugMode = false;
+        bool debugMode
+        {
+            get => _debugMode;
+            set
+            {
+                if (_debugMode != value)
+                {
+                    needWindowChange = true;
+                }
+                _debugMode = value;
+            }
+        }
 
         MapLineRenderer radialLineRenderer;
         MapLineRenderer normalLineRenderer;
@@ -204,14 +229,6 @@ namespace CelestialBodyMover
 
             Util.Log("Awake called");
 
-            skin = (GUISkin)GUISkin.Instantiate(HighLogic.Skin);
-
-            lineStyle = new GUIStyle();
-            lineStyle.normal.background = Texture2D.whiteTexture;
-            lineStyle.padding = new RectOffset(0, 0, 0, 0);
-            lineStyle.margin = new RectOffset(0, 0, 0, 0);
-            lineStyle.border = new RectOffset(0, 0, 0, 0);
-
             GameEvents.onShowUI.Add(KSPShowGUI);
             GameEvents.onHideUI.Add(KSPHideGUI);
 
@@ -230,11 +247,17 @@ namespace CelestialBodyMover
         {
             Util.Log("Start called");
 
+            Texture2D LoadImage(string url)
+            {
+                Util.Log($"Loaded {url} image");
+                return GameDatabase.Instance.GetTexture("CelestialBodyMover/Icons/" + url, false);
+            }
+
+            settingsGear = LoadImage("gearGreen");
+
             InitToolbar();
 
             PluginDataFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
-
-            settings = HighLogic.CurrentGame.Parameters.CustomParams<CBMSettings>();
 
             Tooltip.RecreateInstance();
         }
@@ -274,7 +297,7 @@ namespace CelestialBodyMover
             }
         }
 
-        private void ToggleWindow() => isWindowOpen = !isWindowOpen;
+        private void ToggleWindow() => showMainWindow = !showMainWindow;
 
         private void KSPShowGUI() => isKSPGUIActive = true;
 
@@ -321,7 +344,13 @@ namespace CelestialBodyMover
                 LoadOrbitDetails(Path.Combine(PluginDataFolder, "originalOrbits.cfg"));
             }
 
-            mainRect = new Rect(mainRectPos.x, mainRectPos.y, mainRect.width, mainRect.height);
+            void MakeRect(ref Rect rect, Vector2 pos)
+            {
+                rect = new Rect(pos.x, pos.y, rect.width, rect.height);
+            }
+
+            MakeRect(ref mainRect, mainRectPos);
+            MakeRect(ref settingsRect, settingsRectPos);
         }
 
         private void SaveOrbitDetails(string saveFile)
@@ -521,7 +550,7 @@ namespace CelestialBodyMover
                 firstLoad = false;
             }
 
-            if (settings.debugMode)
+            if (debugMode)
             {
                 if (!CheatOptions.InfinitePropellant) CheatOptions.InfinitePropellant = true;
                 if (!CheatOptions.InfiniteElectricity) CheatOptions.InfiniteElectricity = true;
@@ -539,7 +568,7 @@ namespace CelestialBodyMover
             {
                 mainBody = vessel.mainBody;
                 Orbit vOrbit = vessel.orbit;
-                Util.Log($"inc: {vOrbit.inclination}, ecc: {vOrbit.eccentricity}, sma: {vOrbit.semiMajorAxis}, LAN: {vOrbit.LAN}, arg: {vOrbit.argumentOfPeriapsis}, M: {vOrbit.meanAnomaly}, epoch: {vOrbit.epoch}");
+                //Util.Log($"inc: {vOrbit.inclination}, ecc: {vOrbit.eccentricity}, sma: {vOrbit.semiMajorAxis}, LAN: {vOrbit.LAN}, arg: {vOrbit.argumentOfPeriapsis}, M: {vOrbit.meanAnomaly}, epoch: {vOrbit.epoch}");
                 if (mainBody != null && !mainBody.isStar)
                 {
                     if (isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
@@ -615,18 +644,50 @@ namespace CelestialBodyMover
 
         void OnGUI()
         {
-            if (isWindowOpen && isKSPGUIActive && !isLoading && !isBadUI)
+            if (GUI.skin != HighLogic.Skin)
             {
-                GUI.skin = skin;
+                GUI.skin = HighLogic.Skin;
+            }
+            
+            if (lineStyle == null)
+            {
+                lineStyle = new GUIStyle();
+                lineStyle.normal.background = Texture2D.whiteTexture;
+                lineStyle.padding = new RectOffset(0, 0, 0, 0);
+                lineStyle.margin = new RectOffset(0, 0, 0, 0);
+                lineStyle.border = new RectOffset(0, 0, 0, 0);
+            }
+            
+            if (buttonStyle == null)
+            {
+                buttonStyle = new GUIStyle(HighLogic.Skin.button);
+                buttonStyle.padding = new RectOffset(0, 0, 0, 0);
+            }
+            
+            if (showMainWindow && isKSPGUIActive && !isLoading && !isBadUI)
+            {
                 int id0 = GetHashCode();
+                int id1 = id0 + 1;
 
                 mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "Celestial Body Mover", GUILayout.Width(300));
                 ClampToScreen(ref mainRect);
                 Tooltip.Instance?.ShowTooltip(id0);
+                SetRectPos(ref mainRectPos, mainRect);
 
-                mainRectPos.x = mainRect.xMin;
-                mainRectPos.y = mainRect.yMin;
+                if (showSettingsWindow)
+                {
+                    settingsRect = ClickThruBlocker.GUILayoutWindow(id1, settingsRect, MakeSettingsWindow, "CBM Settings", GUILayout.Width(300));
+                    ClampToScreen(ref settingsRect);
+                    Tooltip.Instance?.ShowTooltip(id1);
+                    SetRectPos(ref settingsRectPos, settingsRect);
+                }
             }
+        }
+
+        private void SetRectPos(ref Vector2 pos, Rect rect)
+        {
+            pos.x = rect.xMin;
+            pos.y = rect.yMin;
         }
 
         private void ClampToScreen(ref Rect rect)
@@ -655,14 +716,14 @@ namespace CelestialBodyMover
 
         private void MakeMainWindow(int id)
         {
+            GUILayout.BeginHorizontal();
             string activeText = isActive ? "Deactivate CBM" : "Activate CBM";
-            if (GUILayout.Button(activeText))
+            if (BoolButton(ref isActive, activeText, options: GUILayout.Width(300f - 30f)))
             {
-                isActive = !isActive;
                 needWindowChange = true;
-
-                //Util.Log(isActive ? "CBM Activated" : "CBM Deactivated");
             }
+            ShowSettingsButton();
+            GUILayout.EndHorizontal();
 
             double currentUT = Planetarium.GetUniversalTime();
             Vessel vessel = FlightGlobals.ActiveVessel;
@@ -671,44 +732,13 @@ namespace CelestialBodyMover
             {
                 Orbit orbit = body.orbit;
 
-                void Box(string value, string boxTooltip = "")
-                {
-                    GUILayout.BeginVertical();
-                    GUILayout.Space(5); // Box is weirdly offset, need to shift it down
-                    GUILayout.Box(new GUIContent(value, boxTooltip), GUILayout.ExpandWidth(true));
-                    GUILayout.EndVertical();
-                }
-
-                void LabelValue(string label, string value, string boxTooltip = "", string labelToolTip = "", bool includeSpace = true)
-                {
-                    if (includeSpace) GUILayout.Space(5);
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label(new GUIContent(label, labelToolTip), GUILayout.ExpandWidth(true));
-                    Box(value, boxTooltip);
-                    GUILayout.EndHorizontal();
-                }
-
-                void LabelValueDouble(string label, double value, string unit, string labelTooltip = "", bool includeSpace = true)
-                {
-                    // TODO: make decimals configurable
-                    LabelValue(label, $"{value:G5}{unit}", $"{value:G17}{unit}", labelTooltip, includeSpace);
-                }
-
-                void DrawLine()
-                {
-                    GUILayout.Space(10);
-                    GUILayout.Box("", lineStyle, GUILayout.Height(2), GUILayout.ExpandWidth(true));
-                    //GUILayout.Space(10);
-                }
-
                 if (isActive)
                 {
                     GUILayout.Space(10);
                     string frozenButton = isFrozen ? "Unfreeze Craft" : "Freeze Craft";
-                    if (GUILayout.Button(frozenButton))
+                    if (BoolButton(ref isFrozen, frozenButton))
                     {
-                        isFrozen = !isFrozen;
-                        if (!isFrozen && settings.killThrottleOnUnfreeze)
+                        if (!isFrozen && killThrottleOnUnfreeze)
                         {
                             FlightInputHandler.state.mainThrottle = 0f;
                             MakeVesselStationary(); // just for a frame
@@ -735,7 +765,7 @@ namespace CelestialBodyMover
 
                     if (isFrozen)
                     {
-                        LabelValueDouble("Vessel Terrain Altitude", vessel.heightFromTerrain, "m", $"Threshold is {settings.maxSurfaceHeight:G}m");
+                        LabelValueDouble("Vessel Terrain Altitude", vessel.heightFromTerrain, "m", $"Threshold is {maxSurfaceHeight:G}m");
 
                         bool canUseForce = HeightValid(vessel) && !InRailsWarp() && alignmentToCenter > 0d;
                         LabelValue("Thrust Is Applied?", $"{canUseForce}", $"Must be a valid height ({HeightValid(vessel)}), not in rails warp ({!InRailsWarp()}), and thrust must be pointing towards the center ({alignmentToCenter > 0d})");
@@ -836,10 +866,7 @@ namespace CelestialBodyMover
                 GUILayout.Space(10);
 
                 string displayLineText = displayLines ? "Hide Lines" : "Display Lines";
-                if (GUILayout.Button(displayLineText))
-                {
-                    displayLines = !displayLines;
-                }
+                BoolButton(ref displayLines, displayLineText);
 
                 GUILayout.Space(10);
             }
@@ -848,7 +875,7 @@ namespace CelestialBodyMover
                 GUILayout.Label($"Current body ({body.displayName.LocalizeRemoveGender()}) is a star, cannot use CBM");
             }
 
-            if (settings.debugMode)
+            if (debugMode)
             {
                 // TODO test these again
                 if (GUILayout.Button("TESTORBIT"))
@@ -875,6 +902,83 @@ namespace CelestialBodyMover
             Tooltip.Instance?.RecordTooltip(id);
             GUI.DragWindow();
             ResetWindow(ref needWindowChange, ref mainRect);
+        }
+
+        private void MakeSettingsWindow(int id)
+        {
+            LabelValueDouble("Max Surface Height:", maxSurfaceHeight , "m", $"Vessel must be below this height when frozen in order for its thrust to be considered valid");
+            maxSurfaceHeight = Mathf.Round(GUILayout.HorizontalSlider(maxSurfaceHeight, 0f, 200f));
+
+            LabelValueDouble("Line Length Exponent:", lineLengthExponent, "", "The exponent that determines how long the displayed lines will be");
+            lineLengthExponent = Mathf.Round(GUILayout.HorizontalSlider(lineLengthExponent, 0f, 6f));
+
+            string killThrottleText = killThrottleOnUnfreeze ? "Disable Kill Throttle" : "Enable Kill Throttle";
+            BoolButton(ref killThrottleOnUnfreeze, killThrottleText, "Set throttle to 0 when unfreezing the craft, to prevent RUDs");
+
+            string debugButtonText = debugMode ? "Disable Debug Mode" : "Enable Debug Mode";
+            bool tempDebugMode = debugMode;
+            BoolButton(ref tempDebugMode, debugButtonText);
+            debugMode = tempDebugMode;
+
+            Tooltip.Instance?.RecordTooltip(id);
+            GUI.DragWindow();
+        }
+
+        private void ShowSettingsButton()
+        {
+            if (settingsGear != null)
+            {
+                BoolButton(ref showSettingsWindow, new GUIContent(settingsGear, "Show Settings"), GUI.skin.button);
+            }
+            else
+            {
+                Util.LogError($"Settings gear icon not found, cannot show settings button");
+            }
+        }
+
+        private bool BoolButton(ref bool value, string label, string tooltip = "", params GUILayoutOption[] options)
+        {
+            return BoolButton(ref value, new GUIContent(label, tooltip), HighLogic.Skin.button, options);
+        }
+
+        private bool BoolButton(ref bool value, GUIContent content, GUIStyle style, params GUILayoutOption[] options)
+        {
+            if (GUILayout.Button(content, style, options))
+            {
+                value = !value;
+                return true;
+            }
+            else return false;
+        }
+
+        private void Box(string value, string boxTooltip = "")
+        {
+            GUILayout.BeginVertical();
+            GUILayout.Space(5); // Box is weirdly offset, need to shift it down
+            GUILayout.Box(new GUIContent(value, boxTooltip), GUILayout.ExpandWidth(true));
+            GUILayout.EndVertical();
+        }
+
+        private void LabelValue(string label, string value, string boxTooltip = "", string labelToolTip = "", bool includeSpace = true)
+        {
+            if (includeSpace) GUILayout.Space(5);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(new GUIContent(label, labelToolTip), GUILayout.ExpandWidth(true));
+            Box(value, boxTooltip);
+            GUILayout.EndHorizontal();
+        }
+
+        private void LabelValueDouble(string label, double value, string unit, string labelTooltip = "", bool includeSpace = true)
+        {
+            // TODO: make decimals configurable
+            LabelValue(label, $"{value:G5}{unit}", $"{value:G17}{unit}", labelTooltip, includeSpace);
+        }
+
+        private void DrawLine()
+        {
+            GUILayout.Space(10);
+            GUILayout.Box("", lineStyle, GUILayout.Height(2), GUILayout.ExpandWidth(true));
+            //GUILayout.Space(10);
         }
 
         //private string FormatTime(double t)
@@ -951,7 +1055,7 @@ namespace CelestialBodyMover
             vessel.SetPosition(currentPos, true);
         }
 
-        private bool HeightValid(Vessel vessel) => vessel.heightFromTerrain < settings.maxSurfaceHeight || vessel.LandedOrSplashed;
+        private bool HeightValid(Vessel vessel) => vessel.heightFromTerrain < maxSurfaceHeight || vessel.LandedOrSplashed;
 
         private bool InRailsWarp() => TimeWarp.CurrentRate != 1f && TimeWarp.WarpMode == TimeWarp.Modes.HIGH; // mode.high is non-physics time warp
 

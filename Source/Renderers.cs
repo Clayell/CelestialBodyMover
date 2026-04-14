@@ -53,7 +53,7 @@ namespace CelestialBodyMover
         float lineLength 
         { get
             {
-                float value = (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.settings.lineLength - 6f);
+                float value = (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.lineLengthExponent - 6f);
                 //Util.Log($"CelestialBodyMover.Instance.settings.lineLength: {CelestialBodyMover.Instance.settings.lineLength}, value: {value}");
                 return value;
                 //return (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.settings.lineLength - 6f);
