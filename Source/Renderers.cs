@@ -10,7 +10,7 @@ namespace CelestialBodyMover
 {
     internal static class RenderUtils
     {
-        internal static LineRenderer InitLine(GameObject objToAttach, Color lineColor, int vertexCount, int initialWidth, Material linesMaterial)
+        internal static LineRenderer InitLine(GameObject objToAttach, Color lineColor, int initialWidth, Material linesMaterial)
         {
             objToAttach.layer = 9;
             LineRenderer lineReturn = objToAttach.AddComponent<LineRenderer>();
@@ -22,7 +22,6 @@ namespace CelestialBodyMover
             lineReturn.useWorldSpace = true;
             lineReturn.startWidth = initialWidth;
             lineReturn.endWidth = initialWidth;
-            lineReturn.positionCount = vertexCount;
             lineReturn.enabled = false;
 
             return lineReturn;
@@ -32,13 +31,30 @@ namespace CelestialBodyMover
         {
             if (line == null) return;
 
-            Vector3d startPos = ScaledSpace.LocalToScaledSpace(center + start);
-            Vector3d endPos = ScaledSpace.LocalToScaledSpace(center + end);
+            Vector3 startPos = ScaledSpace.LocalToScaledSpace(center + start);
+            Vector3 endPos = ScaledSpace.LocalToScaledSpace(center + end);
             Vector3 camPos = PlanetariumCamera.Camera.transform.position;
 
+            Vector3 dist = endPos - startPos;
+            Vector3 dir = dist.normalized;
+            Vector3 viewDir = (endPos - camPos).normalized;
+            float arrowSize = 0.05f * dist.magnitude;
+
+            Vector3 right = Vector3.Cross(dir, viewDir).normalized;
+            Vector3 dirArrow = dir * arrowSize;
+            Vector3 rightArrow = right * arrowSize * 0.5f;
+
+            Vector3 arrowLeft = endPos - dirArrow + rightArrow;
+            Vector3 arrowRight = endPos - dirArrow - rightArrow;
+
+            line.positionCount = 5;
             line.SetPosition(0, startPos);
             line.SetPosition(1, endPos);
-            line.startWidth = line.endWidth = 0.005f * Vector3.Distance(camPos, startPos);
+            line.SetPosition(2, arrowLeft);
+            line.SetPosition(3, arrowRight);
+            line.SetPosition(4, endPos);
+
+            line.startWidth = line.endWidth = 0.002f * Vector3.Distance(camPos, startPos);
             line.enabled = true;
         }
     }
@@ -135,7 +151,7 @@ namespace CelestialBodyMover
             PointDirection = vector;
 
             OnStart();
-            _Line = RenderUtils.InitLine(_objLine, color, 2, 10, orbitLines); // this is so we can set the color here
+            _Line = RenderUtils.InitLine(_objLine, color, 10, orbitLines); // this is so we can set the color here
 
             _startDrawing = DateTime.Now; // TODO, base this on currentUT instead, so it draws quicker with time warp?
             if (visibilityChanged) _currentDrawingState = DrawingState.DrawingLinesAppearing;
