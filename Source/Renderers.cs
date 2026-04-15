@@ -223,10 +223,10 @@ namespace CelestialBodyMover
         void OnGUI()
         {
             if (BodyOrigin == null || PointDirection == null || !Util.MapViewEnabled() || _currentDrawingState != DrawingState.DrawingFullPicture)
-            { return; } // this causes the text to flash while resetting the renderer (but without changing the visibility), TODO fix
+            { return; }
 
             Vector3 center = BodyOrigin.transform.position;
-            Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * PointDirection().normalized));
+            Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * 1.05f * PointDirection().normalized));
 
             bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 100f, PlanetariumCamera.fetch.minDistance);
 
