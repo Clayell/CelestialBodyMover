@@ -38,7 +38,7 @@ namespace CelestialBodyMover
             UnityEngine.Debug.LogError($"{prefix}: {message}");
         }
 
-        internal static bool MapViewEnabled() => MapView.MapIsEnabled && !HighLogic.LoadedSceneIsEditor && HighLogic.LoadedSceneIsFlight;
+        internal static bool MapViewEnabled() => MapView.MapIsEnabled && !HighLogic.LoadedSceneIsEditor && (HighLogic.LoadedSceneIsFlight || HighLogic.LoadedSceneHasPlanetarium || HighLogic.LoadedScene == GameScenes.TRACKSTATION);
     }
 
     [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
@@ -118,7 +118,7 @@ namespace CelestialBodyMover
             {
                 if (_mainBody != value)
                 {
-                    Util.Log($"mainBody changed from {_mainBody?.name} to {value?.name}");
+                    Util.Log($"mainBody changed from {_mainBody?.displayName?.LocalizeRemoveGender()} to {value?.displayName?.LocalizeRemoveGender()}");
                     needWindowChange = true;
                     HideAllRenderers();
                 }
@@ -522,12 +522,10 @@ namespace CelestialBodyMover
                 if (!CheatOptions.IgnoreKerbalInventoryLimits) CheatOptions.IgnoreKerbalInventoryLimits = true;
             }
 
-            if (!isActive && !forceVector.IsZero()) forceVector = Vector3d.zero;
-
             // TODO: look into fixing kopernicus bug in https://github.com/Kopernicus/Kopernicus/issues/825
-
             Vessel vessel = FlightGlobals.ActiveVessel;
             bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null;
+            if ((!isActive || !isFlight) && !forceVector.IsZero()) forceVector = Vector3d.zero;
             if (isFlight)
             {
                 mainBody = vessel.mainBody;
@@ -552,8 +550,16 @@ namespace CelestialBodyMover
                 //Orbit vOrbit = vessel.orbit;
                 //Util.Log($"inc: {vOrbit.inclination}, ecc: {vOrbit.eccentricity}, sma: {vOrbit.semiMajorAxis}, LAN: {vOrbit.LAN}, arg: {vOrbit.argumentOfPeriapsis}, M: {vOrbit.meanAnomaly}, epoch: {vOrbit.epoch}");
             }
+            else if (HighLogic.LoadedScene == GameScenes.TRACKSTATION)
+            {
+                mainBody = MapView.MapCamera.target.celestialBody;
+            }
+            else if (HighLogic.LoadedScene == GameScenes.SPACECENTER)
+            {
+                mainBody = FlightGlobals.GetHomeBody();
+            }
 
-            bool canDisplayLines = isFlight && displayLines;
+            bool canDisplayLines = (isFlight || HighLogic.LoadedScene == GameScenes.TRACKSTATION) && displayLines;
             bool IsRendererHidden(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
             if (canDisplayLines)
             {
@@ -688,21 +694,31 @@ namespace CelestialBodyMover
 
         private void MakeMainWindow(int id)
         {
+            if (HighLogic.LoadedScene != GameScenes.FLIGHT && HighLogic.LoadedScene != GameScenes.TRACKSTATION && HighLogic.LoadedScene != GameScenes.SPACECENTER)
+            {
+                return;
+            }
+            
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && vessel.mainBody == mainBody;
+
             GUILayout.BeginHorizontal();
             string activeText = isActive ? "Deactivate CBM" : "Activate CBM";
-            if (BoolButton(ref isActive, activeText, options: GUILayout.Width(300f - 30f)))
+            string activeTooltip = "";
+            GUI.enabled = isFlight;
+            if (!isFlight) activeTooltip = "This button is currently disabled, as you are not in flight";
+            if (BoolButton(ref isActive, activeText, activeTooltip, GUILayout.Width(300f - 30f)))
             {
                 needWindowChange = true;
             }
+            GUI.enabled = true;
             ShowSettingsButton();
             GUILayout.EndHorizontal();
 
             double currentUT = Planetarium.GetUniversalTime();
-            Vessel vessel = FlightGlobals.ActiveVessel;
-            CelestialBody body = vessel?.mainBody; // mainBody property is already set in Update()
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && GetBodyOrbit(body, out Orbit orbit))
+            if (GetBodyOrbit(mainBody, out Orbit orbit))
             {
-                if (isActive)
+                if (isFlight && isActive)
                 {
                     GUILayout.Space(10);
                     string frozenButton = isFrozen ? "Unfreeze Craft" : "Freeze Craft";
@@ -720,7 +736,7 @@ namespace CelestialBodyMover
                         }
                         else
                         {
-                            currentPos = vessel.vesselTransform.position;
+                            currentPos = vessel.vesselTransform.position; // could also use vessel.CoMD
 
                             //Util.Log($"currentPos: {currentPos}");
                         }
@@ -755,7 +771,7 @@ namespace CelestialBodyMover
                         }
                         else
                         {
-                            GetForceDirections(forceVector, body, out double forceRadial, out double forceNormal, out double forceTransverse);
+                            GetForceDirections(forceVector, mainBody, out double forceRadial, out double forceNormal, out double forceTransverse);
 
                             string radialText = forceRadial >= 0d ? "Radial-Out Force:" : "Radial-In Force:";
                             LabelValueDouble(radialText, Math.Abs(forceRadial), "N");
@@ -801,10 +817,10 @@ namespace CelestialBodyMover
                 DrawLine();
 
                 GUILayout.Label("Body Details:");
-                LabelValue("Body:", body.displayName.LocalizeRemoveGender(), includeSpace: false);
-                LabelValueDouble("Rotation Period:", body.rotationPeriod, "s");
-                LabelValueDouble("Rotation Angle:", body.rotationAngle, "\u00B0");
-                LabelValueDouble("Mass:", body.Mass, "kg");
+                LabelValue("Body:", mainBody.displayName.LocalizeRemoveGender(), includeSpace: false);
+                LabelValueDouble("Rotation Period:", mainBody.rotationPeriod, "s");
+                LabelValueDouble("Rotation Angle:", mainBody.rotationAngle, "\u00B0");
+                LabelValueDouble("Mass:", mainBody.Mass, "kg");
 
                 DrawLine();
 
@@ -828,17 +844,21 @@ namespace CelestialBodyMover
 
                 GUILayout.Space(10);
 
-                if (GUILayout.Button("Reset All Orbits"))
+                if (GUILayout.Button("Reset All Orbits")) // TODO: add "are you sure" window and button
                 {
                     LoadOrbitDetails(Path.Combine(PluginDataFolder, "originalOrbits.cfg"));
                 }
 
                 string displayLineText = displayLines ? "Hide Lines" : "Display Lines";
-                BoolButton(ref displayLines, displayLineText);
+                string displayLinetooltip = "";
+                if (!Util.MapViewEnabled()) displayLinetooltip = "This button is currently disabled, as you are not in the map view";
+                GUI.enabled = Util.MapViewEnabled();
+                BoolButton(ref displayLines, displayLineText, displayLinetooltip);
+                GUI.enabled = true;
             }
-            else if (body != null && body.isStar)
+            else if (mainBody != null && mainBody.isStar)
             {
-                GUILayout.Label($"Current body ({body.displayName.LocalizeRemoveGender()}) is a star, cannot use CBM");
+                GUILayout.Label($"Current body ({mainBody.displayName.LocalizeRemoveGender()}) is a star, cannot use CBM");
             }
 
             if (debugMode)
@@ -850,7 +870,7 @@ namespace CelestialBodyMover
                     if (testBody != null)
                     {
                         Orbit testOrbit = testBody.orbit;
-                        testOrbit.SetOrbit(testOrbit.inclination, .5, testOrbit.semiMajorAxis, testOrbit.LAN, testOrbit.argumentOfPeriapsis, testOrbit.meanAnomalyAtEpoch, testOrbit.epoch, testOrbit.referenceBody);
+                        testOrbit.SetOrbit(testOrbit.inclination, 1.5, testOrbit.PeR / (1 - 1.5), testOrbit.LAN, testOrbit.argumentOfPeriapsis, testOrbit.meanAnomalyAtEpoch, testOrbit.epoch, testOrbit.referenceBody);
                     }
                 }
 
@@ -876,7 +896,7 @@ namespace CelestialBodyMover
             maxSurfaceHeight = Mathf.Round(GUILayout.HorizontalSlider(maxSurfaceHeight, 0f, 200f));
 
             LabelValueDouble("Line Length Exponent:", lineLengthExponent, "", "The exponent that determines how long the displayed lines will be");
-            lineLengthExponent = Mathf.Round(GUILayout.HorizontalSlider(lineLengthExponent, 0f, 6f));
+            lineLengthExponent = Mathf.Round(GUILayout.HorizontalSlider(lineLengthExponent, 0f, 10f));
 
             string killThrottleText = killThrottleOnUnfreeze ? "Disable Kill Throttle" : "Enable Kill Throttle";
             BoolButton(ref killThrottleOnUnfreeze, killThrottleText, "Set throttle to 0 when unfreezing the craft, to prevent RUDs");
@@ -1044,7 +1064,7 @@ namespace CelestialBodyMover
             return orbit.Prograde(currentUT);
         }
 
-        private void GetForceDirections(Vector3d forceVector, CelestialBody body, out double forceRadial, out double forceNormal, out double forcePrograde)
+        private void GetForceDirections(Vector3d forceVector, CelestialBody body, out double forceRadial, out double forceNormal, out double forceTransverse)
         {
             Vector3d radial = GetRadialVector();
             Vector3d normal = GetNormalVector();
@@ -1052,7 +1072,7 @@ namespace CelestialBodyMover
 
             forceRadial = Vector3d.Dot(forceVector, radial);
             forceNormal = Vector3d.Dot(forceVector, normal);
-            forcePrograde = Vector3d.Dot(forceVector, prograde);
+            forceTransverse = Vector3d.Dot(forceVector, prograde);
         }
 
         private void MakeVesselStationary()

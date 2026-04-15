@@ -57,7 +57,7 @@ namespace CelestialBodyMover
                 float value = 0f;
                 if (!BodyOrigin.isStar && BodyOrigin.orbit != null)
                 {
-                    value = (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.lineLengthExponent - 6f);
+                    value = Mathf.Max((float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.lineLengthExponent - 6f), 2f * (float)BodyOrigin.Radius); // scales on current altitude
                 }
                 //Util.Log($"CelestialBodyMover.Instance.settings.lineLength: {CelestialBodyMover.Instance.settings.lineLength}, value: {value}");
                 return value;
@@ -84,7 +84,7 @@ namespace CelestialBodyMover
 
         Material orbitLines;
 
-        private enum DrawingState
+        enum DrawingState
         {
             Hidden,
             DrawingLinesAppearing,
@@ -92,7 +92,7 @@ namespace CelestialBodyMover
             Hiding,
         };
 
-        private DrawingState _currentDrawingState = DrawingState.Hidden;
+        DrawingState _currentDrawingState = DrawingState.Hidden;
 
         private void OnStart() // non-unity
         {
@@ -212,7 +212,7 @@ namespace CelestialBodyMover
             Vector3 center = BodyOrigin.transform.position;
             Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * PointDirection().normalized));
 
-            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 500f, PlanetariumCamera.fetch.minDistance);
+            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 250f, PlanetariumCamera.fetch.minDistance);
 
             // checking z coordinate hides labels when they're behind the camera
             if (dir.z > 0 && cameraNear) GUI.Label(new Rect(dir.x - 50, Screen.height - dir.y - 15, 100, 30), label, _styleLabel);
