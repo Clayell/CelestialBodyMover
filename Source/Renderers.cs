@@ -165,7 +165,7 @@ namespace CelestialBodyMover
 
             float pctDone;
 
-            Vector3d center = BodyOrigin.transform.position;
+            Vector3d center = BodyOrigin.transform.position; // TODO, change this to just BodyOrigin.position? the center seems to jiggle a lot if the body is moving fast and far away from origin in tracking station
             switch (_currentDrawingState)
             {
                 case DrawingState.Hidden: // this shouldnt be possible
@@ -212,7 +212,7 @@ namespace CelestialBodyMover
             Vector3 center = BodyOrigin.transform.position;
             Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * PointDirection().normalized));
 
-            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 250f, PlanetariumCamera.fetch.minDistance);
+            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 100f, PlanetariumCamera.fetch.minDistance);
 
             // checking z coordinate hides labels when they're behind the camera
             if (dir.z > 0 && cameraNear) GUI.Label(new Rect(dir.x - 50, Screen.height - dir.y - 15, 100, 30), label, _styleLabel);
