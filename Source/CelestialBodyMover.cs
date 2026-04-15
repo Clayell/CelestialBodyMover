@@ -3,6 +3,7 @@ using ClickThroughFix;
 //using HarmonyLib;
 using KSP.UI.Screens;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -54,7 +55,6 @@ namespace CelestialBodyMover
         ToolbarControl toolbarControl = null;
 
         GUIStyle lineStyle;
-        GUIStyle buttonStyle;
         Texture2D settingsGear;
 
         [KSPField(isPersistant = true)]
@@ -71,47 +71,9 @@ namespace CelestialBodyMover
 
         [KSPField(isPersistant = true)]
         internal bool isActive = false;
-        //bool _isFrozen = false; // this should be false by default, even after loading
-        //bool isFrozen
-        //{
-        //    get => _isFrozen;
-        //    set
-        //    {
-        //        if (_isFrozen != value)
-        //        {
-        //            needWindowChange = true;
-        //            _isFrozen = value;
-        //        }
-        //    }
-        //} // TODO test this needWindowChange
-        bool isFrozen = false; // this should be false by default, even after loading
+        [KSPField(isPersistant = true)]
+        bool isFrozen = false;
 
-        Vector3d _forceVector;
-        Vector3d forceVector // note: dont use .Zero() on this, since it wont trigger the setter
-        {
-            get => _forceVector;
-            set 
-            {
-                double angle = double.NaN;
-                if (!value.IsZero() && forceLineRenderer != null)
-                {
-                    angle = UtilMath.AngleBetween(forceLineRenderer.PointDirection, value) * radToDeg;
-                }
-                
-                //Util.Log($"forceLineRenderer.PointDirection: {forceLineRenderer?.PointDirection}, value: {value.normalized}, AngleBetween: {angle}, bool: {(!value.IsZero() && forceLineRenderer != null && angle > 1d)}, bool1: {!value.IsZero()}, bool2: {forceLineRenderer != null}, bool3: {angle > 1d}");
-                if (_forceVector.IsZero() != value.IsZero())
-                {
-                    needWindowChange = true;
-                    needForceLineReset = true;
-                }
-                else if (angle > 1d)
-                {
-                    //Util.Log("resetting line");
-                    needForceLineReset = false;
-                }
-                _forceVector = value;
-            }
-        }
         Vector3d radiusVec;
         Vector3d bodyAccel;
         double _alignmentToCenter;
@@ -156,7 +118,7 @@ namespace CelestialBodyMover
             {
                 if (_mainBody != value)
                 {
-                    //Util.Log($"mainBody changed from {_mainBody?.name} to {value?.name}, resetting window");
+                    Util.Log($"mainBody changed from {_mainBody?.name} to {value?.name}");
                     needWindowChange = true;
                     HideAllRenderers();
                 }
@@ -196,12 +158,30 @@ namespace CelestialBodyMover
         }
 
         MapLineRenderer radialLineRenderer;
+        Vector3d radialVector { get => GetRadialVector(); }
         MapLineRenderer normalLineRenderer;
+        Vector3d normalVector { get => GetNormalVector(); }
         MapLineRenderer progradeLineRenderer;
+        Vector3d progradeVector { get => GetProgradeVector(); }
         MapLineRenderer forceLineRenderer;
-        bool? needForceLineReset = null; // visibilityChange true or false
+        Vector3d _forceVector;
+        Vector3d forceVector // note: dont use .Zero() on this, since it wont trigger the setter
+        {
+            get => _forceVector;
+            set
+            {
+                //Util.Log($"forceLineRenderer.PointDirection: {forceLineRenderer?.PointDirection}, value: {value.normalized}, AngleBetween: {angle}, bool: {(!value.IsZero() && forceLineRenderer != null && angle > 1d)}, bool1: {!value.IsZero()}, bool2: {forceLineRenderer != null}, bool3: {angle > 1d}");
+                if (_forceVector.IsZero() != value.IsZero())
+                {
+                    needWindowChange = true;
+                    needForceLineReset = true;
+                }
+                _forceVector = value;
+            }
+        }
+        bool needForceLineReset = false;
         [KSPField(isPersistant = true)]
-        bool displayLines = false;
+        bool displayLines = true;
 
         // TODO: use property setters and fields to detect when the window needs to be reset
 
@@ -282,14 +262,7 @@ namespace CelestialBodyMover
             GameEvents.onGUIRnDComplexDespawn.Remove(ShowBadUI);
             GameEvents.onGUIAdministrationFacilityDespawn.Remove(ShowBadUI);
 
-            Destroy(radialLineRenderer);
-            Destroy(normalLineRenderer);
-            Destroy(progradeLineRenderer);
-            Destroy(forceLineRenderer);
-            radialLineRenderer = null;
-            normalLineRenderer = null;
-            progradeLineRenderer = null;
-            forceLineRenderer = null;
+            DestroyAllRenderers();
 
             if (Instance == this)
             {
@@ -321,14 +294,7 @@ namespace CelestialBodyMover
 
             isLoading = true;
 
-            Destroy(radialLineRenderer);
-            Destroy(normalLineRenderer);
-            Destroy(progradeLineRenderer);
-            Destroy(forceLineRenderer);
-            radialLineRenderer = null;
-            normalLineRenderer = null;
-            progradeLineRenderer = null;
-            forceLineRenderer = null;
+            DestroyAllRenderers();
         }
 
         public override void OnSave(ConfigNode root)
@@ -387,17 +353,12 @@ namespace CelestialBodyMover
             for (int i = 0; i < FlightGlobals.Bodies.Count; i++)
             {
                 CelestialBody body = FlightGlobals.Bodies[i];
-                if (body.isStar || body.name == "Sun")
+                if (body.isStar)
                 {
                     Util.Log($"Body is a star (bodyName: {body.name})");
                     continue;
                 }
-                Orbit orbit = body.orbit;
-                if (orbit == null)
-                {
-                    Util.LogError($"Failed to get orbit for body {body?.name}");
-                    continue;
-                }
+                if (!GetBodyOrbit(body, out Orbit orbit)) continue;
 
                 ConfigNode bodyNode = orbits?.AddNode(body?.name);
                 if (bodyNode == null)
@@ -487,6 +448,8 @@ namespace CelestialBodyMover
                     Util.Log($"Body is a star (bodyName: {body.name}) in {saveNode}, skipping");
                     continue;
                 }
+                if (!GetBodyOrbit(body, out Orbit orbit)) continue;
+
                 ConfigNode bodyNode = orbits.GetNode(body.name);
                 if (bodyNode == null)
                 {
@@ -523,9 +486,7 @@ namespace CelestialBodyMover
                 if (!DoubleParse("rotationPeriod", out double rotationPeriod)) continue;
                 if (!DoubleParse("initialRotation", out double initialRotation)) continue;
 
-                Orbit bodyOrbit = body.orbit;
-
-                bodyOrbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomaly, epoch, referenceBody);
+                orbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomaly, epoch, referenceBody);
 
                 body.rotationPeriod = rotationPeriod;
                 body.initialRotation = initialRotation;
@@ -563,13 +524,14 @@ namespace CelestialBodyMover
 
             if (!isActive && !forceVector.IsZero()) forceVector = Vector3d.zero;
 
+            // TODO: look into fixing kopernicus bug in https://github.com/Kopernicus/Kopernicus/issues/825
+
             Vessel vessel = FlightGlobals.ActiveVessel;
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null)
+            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null;
+            if (isFlight)
             {
                 mainBody = vessel.mainBody;
-                Orbit vOrbit = vessel.orbit;
-                //Util.Log($"inc: {vOrbit.inclination}, ecc: {vOrbit.eccentricity}, sma: {vOrbit.semiMajorAxis}, LAN: {vOrbit.LAN}, arg: {vOrbit.argumentOfPeriapsis}, M: {vOrbit.meanAnomaly}, epoch: {vOrbit.epoch}");
-                if (mainBody != null && !mainBody.isStar)
+                if (GetBodyOrbit(mainBody, out _))
                 {
                     if (isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
                     {
@@ -586,60 +548,57 @@ namespace CelestialBodyMover
 
                         if (!forceVector.IsZero()) MovePlanet(forceVector, isFrozen, radiusVec);
                     }
-
-                    bool CheckRendererAvailable(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
-                    if (displayLines && (CheckRendererAvailable(radialLineRenderer) && CheckRendererAvailable(normalLineRenderer) && CheckRendererAvailable(progradeLineRenderer)))
-                    {
-                        //Util.Log($"DRAWING LINES");
-
-                        radialLineRenderer?.Hide(false);
-                        normalLineRenderer?.Hide(false);
-                        progradeLineRenderer?.Hide(false);
-
-                        radialLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-                        normalLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-                        progradeLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-
-                        GetForceDirections(mainBody, out Vector3d radial, out Vector3d normal, out Vector3d transverse);
-                        radialLineRenderer.Draw(mainBody, radial, "Radial", Color.blue, true);
-                        normalLineRenderer.Draw(mainBody, normal, "Normal", Color.magenta, true);
-                        progradeLineRenderer.Draw(mainBody, transverse, "Prograde", Color.yellow, true);
-                    }
-
-                    if (displayLines && !forceVector.IsZero() && (needForceLineReset.HasValue || CheckRendererAvailable(forceLineRenderer)))
-                    {
-                        bool visibilityChanged = true;
-                        if (needForceLineReset.HasValue)
-                        {
-                            visibilityChanged = needForceLineReset.Value;
-                        }
-                        forceLineRenderer?.Hide(visibilityChanged);
-                        forceLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
-                        forceLineRenderer.Draw(mainBody, forceVector, "Force", Color.red, visibilityChanged);
-                    }
                 }
+                //Orbit vOrbit = vessel.orbit;
+                //Util.Log($"inc: {vOrbit.inclination}, ecc: {vOrbit.eccentricity}, sma: {vOrbit.semiMajorAxis}, LAN: {vOrbit.LAN}, arg: {vOrbit.argumentOfPeriapsis}, M: {vOrbit.meanAnomaly}, epoch: {vOrbit.epoch}");
             }
 
-            bool CheckRendererHiding(MapLineRenderer renderer) => renderer != null && !renderer.IsHiding;
-            if ((CheckRendererHiding(radialLineRenderer) && CheckRendererHiding(normalLineRenderer) && CheckRendererHiding(progradeLineRenderer)) && (HighLogic.LoadedScene != GameScenes.FLIGHT || !displayLines))
+            bool canDisplayLines = isFlight && displayLines;
+            bool IsRendererHidden(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
+            if (canDisplayLines)
             {
-                //Util.Log($"CLEARING LINES");
-
-                radialLineRenderer?.Hide(true);
-                normalLineRenderer?.Hide(true);
-                progradeLineRenderer?.Hide(true);
-            }
-            else if (CheckRendererHiding(forceLineRenderer) && (HighLogic.LoadedScene != GameScenes.FLIGHT || !displayLines || forceVector.IsZero()))
-            {
-                bool visibilityChanged = true;
-                if (needForceLineReset.HasValue)
+                if (IsRendererHidden(radialLineRenderer))
                 {
-                    visibilityChanged = needForceLineReset.Value;
+                    radialLineRenderer?.Hide(false);
+                    radialLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    radialLineRenderer.Draw(mainBody, () => radialVector, "Radial Out", Color.blue, true);
                 }
-                forceLineRenderer?.Hide(visibilityChanged);
+
+                if (IsRendererHidden(normalLineRenderer))
+                {
+                    normalLineRenderer?.Hide(false);
+                    normalLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    normalLineRenderer.Draw(mainBody, () => normalVector, "Normal", Color.magenta, true);
+                }
+
+                if (IsRendererHidden(progradeLineRenderer))
+                {
+                    progradeLineRenderer?.Hide(false);
+                    progradeLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    progradeLineRenderer.Draw(mainBody, () => progradeVector, "Prograde", Color.yellow, true);
+                }
+
+                if ((needForceLineReset || IsRendererHidden(forceLineRenderer)) && !forceVector.IsZero())
+                {
+                    forceLineRenderer?.Hide(false);
+                    forceLineRenderer = MapView.MapCamera.gameObject.AddComponent<MapLineRenderer>();
+                    forceLineRenderer.Draw(mainBody, () => forceVector, "Force", Color.red, true);
+                }
             }
 
-            needForceLineReset = null;
+            bool RendererNotHiding(MapLineRenderer renderer) => renderer != null && !renderer.IsHiding;
+            if (!canDisplayLines || forceVector.IsZero())
+            {
+                if (RendererNotHiding(forceLineRenderer)) forceLineRenderer.Hide(true);
+                if (!canDisplayLines)
+                {
+                    if (RendererNotHiding(radialLineRenderer)) radialLineRenderer.Hide(true);
+                    if (RendererNotHiding(normalLineRenderer)) normalLineRenderer.Hide(true);
+                    if (RendererNotHiding(progradeLineRenderer)) progradeLineRenderer.Hide(true);
+                }
+            }
+
+            needForceLineReset = false;
         }
 
         void OnGUI()
@@ -656,12 +615,6 @@ namespace CelestialBodyMover
                 lineStyle.padding = new RectOffset(0, 0, 0, 0);
                 lineStyle.margin = new RectOffset(0, 0, 0, 0);
                 lineStyle.border = new RectOffset(0, 0, 0, 0);
-            }
-            
-            if (buttonStyle == null)
-            {
-                buttonStyle = new GUIStyle(HighLogic.Skin.button);
-                buttonStyle.padding = new RectOffset(0, 0, 0, 0);
             }
             
             if (showMainWindow && isKSPGUIActive && !isLoading && !isBadUI)
@@ -697,11 +650,18 @@ namespace CelestialBodyMover
             rect = new Rect(left, top, rect.width, rect.height);
         }
 
-        private void ResetWindow(ref bool needsReset, ref Rect rect) // This should only be used at the end of the current window
+        private IEnumerator ResetMainWindowCoroutine()
+        {
+            yield return new WaitForEndOfFrame(); // wait until end of frame
+
+            mainRect = new Rect(mainRect.xMin, mainRect.yMin, -1f, -1f);
+        }
+
+        private void ResetMainWindow(ref bool needsReset) // This should only be used at the end of the current window
         { // Doing this forces the window to be resized
             if (needsReset)
             {
-                rect = new Rect(rect.xMin, rect.yMin, -1f, -1f);
+                StartCoroutine(ResetMainWindowCoroutine());
                 needsReset = false;
             }
         }
@@ -712,6 +672,18 @@ namespace CelestialBodyMover
             normalLineRenderer?.Hide(true);
             progradeLineRenderer?.Hide(true);
             forceLineRenderer?.Hide(true);
+        }
+
+        private void DestroyAllRenderers()
+        {
+            Destroy(radialLineRenderer);
+            Destroy(normalLineRenderer);
+            Destroy(progradeLineRenderer);
+            Destroy(forceLineRenderer);
+            radialLineRenderer = null;
+            normalLineRenderer = null;
+            progradeLineRenderer = null;
+            forceLineRenderer = null;
         }
 
         private void MakeMainWindow(int id)
@@ -728,10 +700,8 @@ namespace CelestialBodyMover
             double currentUT = Planetarium.GetUniversalTime();
             Vessel vessel = FlightGlobals.ActiveVessel;
             CelestialBody body = vessel?.mainBody; // mainBody property is already set in Update()
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && body != null && !body.isStar)
+            if (HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && GetBodyOrbit(body, out Orbit orbit))
             {
-                Orbit orbit = body.orbit;
-
                 if (isActive)
                 {
                     GUILayout.Space(10);
@@ -761,7 +731,7 @@ namespace CelestialBodyMover
                     const double tolerance = 1e-3d;
 
                     string forceText = isFrozen ? $"Thrust:" : $"Gravitational Force:";
-                    LabelValue(forceText, $"{forceVector.magnitude:N2}N");
+                    LabelValueDouble(forceText, forceVector.magnitude, "N");
 
                     if (isFrozen)
                     {
@@ -806,7 +776,7 @@ namespace CelestialBodyMover
                                 double angleToCenter = Math.Acos(alignmentToCenter) * radToDeg;
                                 double effectiveThrust = forceVector.magnitude * alignmentToCenter;
 
-                                LabelValueDouble("Force Alignment Offset:", angleToCenter, "\u00B0", "The angle that the force is offset from the center by");
+                                LabelValueDouble("Force Alignment Offset:", angleToCenter, "\u00B0", "The angle that the force is offset from the center by, where 0\u00B0 indicates maximum force");
                                 LabelValueDouble("Effective Thrust:", effectiveThrust, "N", "The component of force pointing towards the center");
 
                                 GUILayout.Space(10);
@@ -818,7 +788,7 @@ namespace CelestialBodyMover
                                 {
                                     double angleToAxis = Math.Acos(alignmentToAxis) * radToDeg;
 
-                                    LabelValueDouble("Torque Alignment Offset:", angleToAxis, "\u00B0", "The angle that the torque is offset from the axis by");
+                                    LabelValueDouble("Torque Alignment Offset:", angleToAxis, "\u00B0", "The angle that the torque is offset from the axis by, where 90\u00B0 indicates maximum torque");
                                     LabelValueDouble("Torque:", torqueAlongAxis, "Nm", "The component of torque perpendicular to the axis");
 
                                     LabelValueDouble($"Angular Acceleration:", bodyAngularAccel * radToDeg, "\u00B0/s\u00B2");
@@ -863,12 +833,8 @@ namespace CelestialBodyMover
                     LoadOrbitDetails(Path.Combine(PluginDataFolder, "originalOrbits.cfg"));
                 }
 
-                GUILayout.Space(10);
-
                 string displayLineText = displayLines ? "Hide Lines" : "Display Lines";
                 BoolButton(ref displayLines, displayLineText);
-
-                GUILayout.Space(10);
             }
             else if (body != null && body.isStar)
             {
@@ -901,7 +867,7 @@ namespace CelestialBodyMover
 
             Tooltip.Instance?.RecordTooltip(id);
             GUI.DragWindow();
-            ResetWindow(ref needWindowChange, ref mainRect);
+            ResetMainWindow(ref needWindowChange);
         }
 
         private void MakeSettingsWindow(int id)
@@ -915,7 +881,7 @@ namespace CelestialBodyMover
             string killThrottleText = killThrottleOnUnfreeze ? "Disable Kill Throttle" : "Enable Kill Throttle";
             BoolButton(ref killThrottleOnUnfreeze, killThrottleText, "Set throttle to 0 when unfreezing the craft, to prevent RUDs");
 
-            string debugButtonText = debugMode ? "Disable Debug Mode" : "Enable Debug Mode";
+            string debugButtonText = debugMode ? "Disable Debug Mode" : "Enable Debug Mode"; // TODO take this out of the settings window before release
             bool tempDebugMode = debugMode;
             BoolButton(ref tempDebugMode, debugButtonText);
             debugMode = tempDebugMode;
@@ -999,22 +965,55 @@ namespace CelestialBodyMover
         //    return $"{FormatDecimals(t)}s";
         //}
 
-        private void GetForceDirections(CelestialBody body, out Vector3d radial, out Vector3d normal, out Vector3d transverse)
+        private bool GetBodyOrbit(CelestialBody body, out Orbit orbit)
+        {
+            if (body == null)
+            {
+                Util.LogError($"body is null in GetBodyOrbit (body: {body})");
+                orbit = null;
+                return false;
+            }
+            else if (body.isStar)
+            {
+                //Util.Log($"body is a star in GetBodyOrbit (body: {body.name}, body.isStar: {body.isStar})");
+                orbit = null;
+                return false;
+            }
+            else if (body.orbit == null)
+            {
+                Util.LogError($"body.orbit is null in GetBodyOrbit (body: {body.name}, body.orbit: {body.orbit})");
+                orbit = null;
+                return false;
+            }
+            else
+            {
+                orbit = body.orbit;
+                return true;
+            }
+        }
+
+        private Vector3d GetRadialVector()
         {
             double currentUT = Planetarium.GetUniversalTime();
 
-            if (body == null || body.orbit == null)
+            if (!GetBodyOrbit(mainBody, out Orbit orbit))
             {
-                Util.LogError($"body or body.orbit is null in GetForceDirections (body: {body}, body.orbit: {body?.orbit})");
-                radial = Vector3d.zero;
-                normal = Vector3d.zero;
-                transverse = Vector3d.zero;
-                return;
+                return Vector3d.zero;
             }
 
-            Orbit orbit = body.orbit;
-            Orbit fakeOrbit = new Orbit();
+            return orbit.Radial(currentUT);
+        }
 
+        private Vector3d GetNormalVector()
+        {
+            double currentUT = Planetarium.GetUniversalTime();
+
+            if (!GetBodyOrbit(mainBody, out Orbit orbit))
+            {
+                return Vector3d.zero;
+            }
+
+            Orbit fakeOrbit = new Orbit();
             const double epsilon = 1e-9d;
             if (orbit.inclination > epsilon && Math.Abs(orbit.inclination - 180d) > epsilon)
             {
@@ -1030,21 +1029,30 @@ namespace CelestialBodyMover
                 fakeOrbit.SetOrbit(newInclination, orbit.eccentricity, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
             }
 
-            radial = fakeOrbit.Radial(currentUT);
-            normal = -fakeOrbit.Normal(currentUT); // use negative bc KSP gives left handed stuff
-            transverse = fakeOrbit.Prograde(currentUT);
-
-            //Util.Log($"Force directions: Radial: {radial}, radial2: {radial2}, Normal: {normal}, normal2: {normal2}, Transverse: {transverse}, transverse2: {transverse2}");
-            //Util.Log($"forceVector: {forceVector}, body.angularVelocity.normalized: {body.angularVelocity.normalized}");
+            return -fakeOrbit.Normal(currentUT); // use negative bc KSP gives left handed stuff
         }
 
-        private void GetForceDirections(Vector3d forceVector, CelestialBody body, out double forceRadial, out double forceNormal, out double forceTransverse)
+        private Vector3d GetProgradeVector()
         {
-            GetForceDirections(body, out Vector3d radial, out Vector3d normal, out Vector3d transverse);
+            double currentUT = Planetarium.GetUniversalTime();
+
+            if (!GetBodyOrbit(mainBody, out Orbit orbit))
+            {
+                return Vector3d.zero;
+            }
+
+            return orbit.Prograde(currentUT);
+        }
+
+        private void GetForceDirections(Vector3d forceVector, CelestialBody body, out double forceRadial, out double forceNormal, out double forcePrograde)
+        {
+            Vector3d radial = GetRadialVector();
+            Vector3d normal = GetNormalVector();
+            Vector3d prograde = GetProgradeVector();
 
             forceRadial = Vector3d.Dot(forceVector, radial);
             forceNormal = Vector3d.Dot(forceVector, normal);
-            forceTransverse = Vector3d.Dot(forceVector, transverse);
+            forcePrograde = Vector3d.Dot(forceVector, prograde);
         }
 
         private void MakeVesselStationary()

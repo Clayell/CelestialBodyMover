@@ -1,6 +1,7 @@
 ﻿// Adapted from TWP2 with permission (https://github.com/Nazfib/TransferWindowPlanner2/tree/main/TransferWindowPlanner2/UI/Rendering), thanks Nazfib!
 // I think the original code was taken from KSP's AngleRenderEject, which seems to be a class that is hardly used
 
+using LibNoise.Models;
 using System;
 using System.Reflection.Emit;
 using UnityEngine;
@@ -53,7 +54,11 @@ namespace CelestialBodyMover
         float lineLength 
         { get
             {
-                float value = (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.lineLengthExponent - 6f);
+                float value = 0f;
+                if (!BodyOrigin.isStar && BodyOrigin.orbit != null)
+                {
+                    value = (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.lineLengthExponent - 6f);
+                }
                 //Util.Log($"CelestialBodyMover.Instance.settings.lineLength: {CelestialBodyMover.Instance.settings.lineLength}, value: {value}");
                 return value;
                 //return (float)BodyOrigin.orbit.radius * Mathf.Pow(10f, CelestialBodyMover.Instance.settings.lineLength - 6f);
@@ -75,7 +80,7 @@ namespace CelestialBodyMover
 
         string label;
         CelestialBody BodyOrigin;
-        internal Vector3d PointDirection;
+        Func<Vector3d> PointDirection;
 
         Material orbitLines;
 
@@ -123,11 +128,11 @@ namespace CelestialBodyMover
 
         private void Log(string message) => Util.Log(message);
 
-        internal void Draw(CelestialBody body, Vector3d line, string label, Color color, bool visibilityChanged)
+        internal void Draw(CelestialBody body, Func<Vector3d> vector, string label, Color color, bool visibilityChanged)
         {
             this.label = label;
             BodyOrigin = body;
-            PointDirection = line.normalized;
+            PointDirection = vector;
 
             OnStart();
             _Line = RenderUtils.InitLine(_objLine, color, 2, 10, orbitLines); // this is so we can set the color here
@@ -156,7 +161,7 @@ namespace CelestialBodyMover
                 return;
             }
 
-            Vector3d dir = PointDirection;
+            Vector3d dir = PointDirection().normalized;
 
             float pctDone;
 
@@ -205,9 +210,9 @@ namespace CelestialBodyMover
             { return; } // this causes the text to flash while resetting the renderer (but without changing the visibility), TODO fix
 
             Vector3 center = BodyOrigin.transform.position;
-            Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * PointDirection));
+            Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * PointDirection().normalized));
 
-            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 1000f, PlanetariumCamera.fetch.minDistance);
+            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 500f, PlanetariumCamera.fetch.minDistance);
 
             // checking z coordinate hides labels when they're behind the camera
             if (dir.z > 0 && cameraNear) GUI.Label(new Rect(dir.x - 50, Screen.height - dir.y - 15, 100, 30), label, _styleLabel);
