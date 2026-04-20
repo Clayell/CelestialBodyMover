@@ -12,4 +12,5 @@
 * Harmony2
 
 ## Special Thanks To
+* [Nazfib](https://github.com/Nazfib) (Orbit/Angle Renderer from [TWP2](https://github.com/Nazfib/TransferWindowPlanner2))
 * [siimav](https://github.com/siimav) ([Tooltips from RP-1](https://github.com/KSP-RO/RP-1/blob/master/Source/RP0/UI/Tooltip.cs))
