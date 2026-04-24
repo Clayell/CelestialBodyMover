@@ -115,7 +115,7 @@ namespace CelestialBodyMover
         Coroutine impactCoroutine;
         Vector2 popupAnchor = new Vector2(0.5f, 0.5f);
         [KSPField(isPersistant = true)]
-        float minImpactSpeed = 100f;
+        float minImpactSpeed = 50f;
 
         CelestialBody _mainBody;
         CelestialBody mainBody
@@ -228,6 +228,7 @@ namespace CelestialBodyMover
             GameEvents.onGUIAdministrationFacilityDespawn.Add(ShowBadUI);
 
             GameEvents.onCrash.Add(ImpactDetected);
+            GameEvents.onCrashSplashdown.Add(ImpactDetected);
             GameEvents.onVesselExplodeGroundCollision.Add(ImpactDetected);
             GameEvents.onCollision.Add(ImpactDetected);
             GameEvents.OnCollisionEnhancerHit.Add(ImpactDetected);
@@ -273,6 +274,7 @@ namespace CelestialBodyMover
             GameEvents.onGUIAdministrationFacilityDespawn.Remove(ShowBadUI);
 
             GameEvents.onCrash.Remove(ImpactDetected);
+            GameEvents.onCrashSplashdown.Remove(ImpactDetected);
             GameEvents.onVesselExplodeGroundCollision.Remove(ImpactDetected);
             GameEvents.onCollision.Remove(ImpactDetected);
             GameEvents.OnCollisionEnhancerHit.Remove(ImpactDetected);
@@ -1558,14 +1560,14 @@ namespace CelestialBodyMover
                 int newDirection = Math.Sign(body.rotationPeriod);
                 double newAngVelocity = body.angularVelocity.magnitude * newDirection * radToDeg;
                 bool changedDirection = initialDirection != newDirection;
-                string msg = $"A vessel impacted with {displayName} at a velocity of {vesselVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {newBodyVelocity.magnitude - bodyVelocity.magnitude:G17}m/s), " +
+                string msg = $"A vessel impacted with {displayName} at a velocity of {relativeVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {newBodyVelocity.magnitude - bodyVelocity.magnitude:G17}m/s), " +
                     $"and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity:G17}\u00B0/s, or {body.rotationPeriod - initialPeriod:G17}s)" + (changedDirection ? ", reversing the direction of its rotation." : ".");
                 Util.Log(msg);
                 PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", msg, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
             }
             else // what even uses this? maybe for like stars or something
             {
-                string msg = $"A vessel impacted with {displayName} at a velocity of {vesselVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {(newBodyVelocity.magnitude - bodyVelocity.magnitude):G5}m/s).";
+                string msg = $"A vessel impacted with {displayName} at a velocity of {relativeVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {(newBodyVelocity.magnitude - bodyVelocity.magnitude):G5}m/s).";
                 Util.Log(msg);
                 PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", msg, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
             }
@@ -1606,7 +1608,7 @@ namespace CelestialBodyMover
 
                 if (StopImpactCoroutine(vessel)) yield break;
 
-                //Util.Log($"Running ImpactCoroutine 2");
+                //Util.Log($"Running ImpactCoroutine 2, impactDetected: {impactDetected}");
 
                 bool VectorNullOrZero(Vector3d vector) => vector == null || vector.IsZero();
 
@@ -1630,18 +1632,18 @@ namespace CelestialBodyMover
                     yield return new WaitForFixedUpdate(); // run on fixed update for physics stuff
                 }
 
-                //Util.Log($"Triggered impact coroutine 1");
+                //Util.Log($"Triggered impact coroutine 1, impactDetected: {impactDetected}");
 
                 if (StopImpactCoroutine(vessel)) yield break;
 
-                //Util.Log($"Triggered impact coroutine 2");
+                //Util.Log($"Triggered impact coroutine 2, impactDetected: {impactDetected}");
 
                 if (vessel.id == vesselID && !VectorNullOrZero(vesselVelocity) && GetBodyOrbit(mainBody, out _) && !VectorNullOrZero(bodyVelocity))
                 {
-                    // some of this is copied from Vessel.CheckKill()
-                    if (vesselVerticalSpeed > minImpactSpeed || (!vessel.LandedOrSplashed && !vessel.HoldPhysics && vessel.altitude < ((vessel.terrainAltitude != -1d) ? vessel.terrainAltitude : -250d)))
+                    // third OR statement is copied from Vessel.CheckKill()
+                    if (impactDetected || Math.Abs(vesselVerticalSpeed) > minImpactSpeed || (!vessel.LandedOrSplashed && !vessel.HoldPhysics && vessel.altitude < ((vessel.terrainAltitude != -1d) ? vessel.terrainAltitude : -250d)))
                     {
-                        //Util.Log($"Triggered impact coroutine 3");
+                        //Util.Log($"Impact used. impactDetected: {impactDetected}, vesselVerticalSpeed: {vesselVerticalSpeed}, minImpactSpeed: {minImpactSpeed}, vessel.LandedOrSplashed: {vessel.LandedOrSplashed}, vessel.HoldPhysics: {vessel.HoldPhysics}, vessel.altitude: {vessel.altitude}");
                         double currentUT = Planetarium.GetUniversalTime();
                         MoveBodyImpact(vessel, mainBody, vesselVelocity, radiusVec, bodyVelocity, currentUT);
                         vessel.MurderCrew(); // probably not needed
@@ -1650,12 +1652,12 @@ namespace CelestialBodyMover
                     }
                     else
                     {
-                        //Util.Log($"Not high enough velocity");
+                        //Util.Log($"Impact not used. impactDetected: {impactDetected}, vesselVerticalSpeed: {vesselVerticalSpeed}, minImpactSpeed: {minImpactSpeed}, vessel.LandedOrSplashed: {vessel.LandedOrSplashed}, vessel.HoldPhysics: {vessel.HoldPhysics}, vessel.altitude: {vessel.altitude}");
                     }
                 }
                 else
                 {
-                    //Util.Log($"Not triggered. vessel.id: {vessel.id},vesselID: {vesselID}, !VectorNullOrZero(vesselVelocity): {!VectorNullOrZero(vesselVelocity)}, mainBody: {mainBody}, !VectorNullOrZero(bodyVelocity): {!VectorNullOrZero(bodyVelocity)}");
+                    //Util.Log($"Impact not valid. vessel.id: {vessel.id}, vesselID: {vesselID}, !VectorNullOrZero(vesselVelocity): {!VectorNullOrZero(vesselVelocity)}, mainBody: {mainBody}, !VectorNullOrZero(bodyVelocity): {!VectorNullOrZero(bodyVelocity)}");
                 }
             }
             finally
