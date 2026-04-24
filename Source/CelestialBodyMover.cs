@@ -1400,15 +1400,15 @@ namespace CelestialBodyMover
             orbit.UpdateFromStateVectors(position, velocity, orbit.referenceBody, currentUT); // use currentUT to set the epoch to now
             //Util.Log($"orbit.eccentricity: {orbit.eccentricity}, orbit.semiMajorAxis: {orbit.semiMajorAxis}");
 
-            if (orbit.eccentricity < epsilon && eccentricity < epsilon)
+            if ((orbit.inclination < epsilon && inclination < epsilon) || (Math.Abs(orbit.inclination - 180d) < epsilon && Math.Abs(eccentricity - 180d) < epsilon))
+            { // AOP, LAN, and meanAnomaly are not stable in flat orbits
+                //Util.Log("flat orbit detected");
+                orbit.SetOrbit(orbit.inclination, orbit.eccentricity, orbit.semiMajorAxis, LAN, AOP, meanAnomaly, orbit.epoch, orbit.referenceBody);
+            }
+            else if (orbit.eccentricity < epsilon && eccentricity < epsilon)
             { // AOP and meanAnomaly are not stable in circular orbits
                 //Util.Log("circular orbit detected");
                 orbit.SetOrbit(orbit.inclination, orbit.eccentricity, orbit.semiMajorAxis, orbit.LAN, AOP, meanAnomaly, orbit.epoch, orbit.referenceBody);
-            }
-            if ((orbit.inclination < epsilon && inclination < epsilon) || (Math.Abs(orbit.inclination - 180d) < epsilon && Math.Abs(eccentricity - 180d) < epsilon))
-            { // AOP and LAN are not stable in flat orbits
-                //Util.Log("flat orbit detected");
-                orbit.SetOrbit(orbit.inclination, orbit.eccentricity, orbit.semiMajorAxis, LAN, AOP, orbit.meanAnomaly, orbit.epoch, orbit.referenceBody);
             }
 
             FixParabolic(ref orbit);
@@ -1558,8 +1558,8 @@ namespace CelestialBodyMover
                 int newDirection = Math.Sign(body.rotationPeriod);
                 double newAngVelocity = body.angularVelocity.magnitude * newDirection * radToDeg;
                 bool changedDirection = initialDirection != newDirection;
-                string msg = $"A vessel impacted with {displayName} at a velocity of {vesselVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {(newBodyVelocity.magnitude - bodyVelocity.magnitude)}m/s), " +
-                    $"and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity}\u00B0/s, or {body.rotationPeriod - initialPeriod}s)" + (changedDirection ? ", reversing the direction of its rotation." : ".");
+                string msg = $"A vessel impacted with {displayName} at a velocity of {vesselVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {newBodyVelocity.magnitude - bodyVelocity.magnitude:G17}m/s), " +
+                    $"and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity:G17}\u00B0/s, or {body.rotationPeriod - initialPeriod:G17}s)" + (changedDirection ? ", reversing the direction of its rotation." : ".");
                 Util.Log(msg);
                 PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", msg, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
             }
