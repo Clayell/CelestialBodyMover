@@ -229,7 +229,8 @@ namespace CelestialBodyMover
 
             GameEvents.onCrash.Add(ImpactDetected);
             GameEvents.onVesselExplodeGroundCollision.Add(ImpactDetected);
-            //GameEvents.onCollision.Add(ImpactDetected); // vessel collisions only
+            GameEvents.onCollision.Add(ImpactDetected);
+            GameEvents.OnCollisionEnhancerHit.Add(ImpactDetected);
         }
 
         void Start()
@@ -273,7 +274,8 @@ namespace CelestialBodyMover
 
             GameEvents.onCrash.Remove(ImpactDetected);
             GameEvents.onVesselExplodeGroundCollision.Remove(ImpactDetected);
-            //GameEvents.onCollision.Remove(ImpactDetected); // vessel collisions only
+            GameEvents.onCollision.Remove(ImpactDetected);
+            GameEvents.OnCollisionEnhancerHit.Remove(ImpactDetected);
 
             DestroyAllRenderers();
 
@@ -577,7 +579,7 @@ namespace CelestialBodyMover
                 if (GetBodyOrbit(mainBody, out Orbit orbit))
                 {
                     double currentUT = Planetarium.GetUniversalTime();
-                    bodyVelocity = orbit.getOrbitalVelocityAtUT(currentUT); // same as orbit.getOrbitalVelocityAtUT(currentUT) + orbit.referenceBody.GetFrameVelAtUT(currentUT) - orbit.referenceBody.GetFrameVelAtUT(currentUT);
+                    bodyVelocity = orbit.getOrbitalVelocityAtUT(currentUT);
                     if (isFlight && isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
                     {
                         if (isFrozen)
@@ -1511,7 +1513,6 @@ namespace CelestialBodyMover
             Orbit orbit = body.orbit;
 
             Vector3d position = orbit.getRelativePositionAtUT(currentUT); // same as (orbit.getTruePositionAtUT(currentUT) - orbit.referenceBody.getTruePositionAtUT(currentUT)).xzy;
-            bodyVelocity = bodyVelocity.xzy; // change to world velocity
             Vector3d axis = body.angularVelocity.normalized;
 
             Vector3d rotationVelocity = Vector3d.Cross(radiusVec, body.angularVelocity);
@@ -1557,8 +1558,8 @@ namespace CelestialBodyMover
                 int newDirection = Math.Sign(body.rotationPeriod);
                 double newAngVelocity = body.angularVelocity.magnitude * newDirection * radToDeg;
                 bool changedDirection = initialDirection != newDirection;
-                string msg = $"A vessel impacted with {displayName} at a velocity of {vesselVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {(newBodyVelocity.magnitude - bodyVelocity.magnitude):G5}m/s), " +
-                    $"and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity:G5}\u00B0/s, or {body.rotationPeriod - initialPeriod:G5}s)" + (changedDirection ? ", reversing the direction of its rotation." : ".");
+                string msg = $"A vessel impacted with {displayName} at a velocity of {vesselVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {(newBodyVelocity.magnitude - bodyVelocity.magnitude)}m/s), " +
+                    $"and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity}\u00B0/s, or {body.rotationPeriod - initialPeriod}s)" + (changedDirection ? ", reversing the direction of its rotation." : ".");
                 Util.Log(msg);
                 PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", msg, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
             }
@@ -1572,6 +1573,7 @@ namespace CelestialBodyMover
 
         private void ImpactDetected(EventReport evt) => impactDetected = true;
         private void ImpactDetected(Vessel vessel) => impactDetected = true;
+        private void ImpactDetected(Part p, RaycastHit r) => impactDetected = true;
 
         private void StopImpactCoroutine()
         {
@@ -1599,7 +1601,7 @@ namespace CelestialBodyMover
             try
             {
                 //Util.Log($"Running ImpactCoroutine 1, impactDetected: {impactDetected}");
-                
+
                 Vessel vessel = FlightGlobals.ActiveVessel;
 
                 if (StopImpactCoroutine(vessel)) yield break;
