@@ -55,7 +55,6 @@
     </Compile>
     <Compile Include="Source\CelestialBodyMover.cs" />
     <Compile Include="Source\HarmonyPatches.cs" />
-    <Compile Include="Source\BodyPartModule.cs" />
     <Compile Include="Source\Renderers.cs" />
     <Compile Include="Source\Tooltip.cs" />
   </ItemGroup>

@@ -49,6 +49,35 @@ namespace CelestialBodyMover
         }
 
         internal static bool MapViewEnabled() => MapView.MapIsEnabled && !HighLogic.LoadedSceneIsEditor && (HighLogic.LoadedSceneIsFlight || HighLogic.LoadedSceneHasPlanetarium || HighLogic.LoadedScene == GameScenes.TRACKSTATION);
+
+        internal static bool IsFlight() => HighLogic.LoadedScene == GameScenes.FLIGHT && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel.state != Vessel.State.DEAD;
+
+        internal static bool GetBodyOrbit(CelestialBody body, out Orbit orbit, bool includeLogs = true)
+        {
+            if (body == null)
+            {
+                if (includeLogs) LogError($"body is null in GetBodyOrbit (body: {body})");
+                orbit = null;
+                return false;
+            }
+            else if (body.isStar)
+            {
+                //Log($"body is a star in GetBodyOrbit (body: {body.name}, body.isStar: {body.isStar})");
+                orbit = null;
+                return false;
+            }
+            else if (body.orbit == null)
+            {
+                if (includeLogs) LogError($"body.orbit is null in GetBodyOrbit (body: {body.name}, body.orbit: {body.orbit})");
+                orbit = null;
+                return false;
+            }
+            else
+            {
+                orbit = body.orbit;
+                return true;
+            }
+        }
     }
 
     [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
@@ -83,7 +112,7 @@ namespace CelestialBodyMover
         [KSPField(isPersistant = true)]
         internal bool isActive = false;
         [KSPField(isPersistant = true)]
-        bool isFrozen = false;
+        internal bool isFrozen = false;
 
         Vector3d radiusVec => mainBody != null && FlightGlobals.ActiveVessel != null ? mainBody.position - FlightGlobals.ActiveVessel.GetWorldPos3D() : Vector3d.zero; // vector from vessel to body
         Vector3d bodyAccel;
@@ -159,7 +188,7 @@ namespace CelestialBodyMover
         [KSPField(isPersistant = true)]
         bool formatTime = true;
         [KSPField(isPersistant = true)]
-        bool includeBodyMass = true;
+        internal bool includeBodyMass = false;
         [KSPField(isPersistant = true)]
         bool debugMode = false; // TODO add menu to modify orbit manually if debugMode is on
 
@@ -382,7 +411,7 @@ namespace CelestialBodyMover
                     Util.Log($"Body is a star (bodyName: {body.name})");
                     continue;
                 }
-                if (!GetBodyOrbit(body, out Orbit orbit)) continue;
+                if (!Util.GetBodyOrbit(body, out Orbit orbit)) continue;
 
                 ConfigNode bodyNode = orbits?.AddNode(body?.name);
                 if (bodyNode == null)
@@ -475,7 +504,7 @@ namespace CelestialBodyMover
                     Util.Log($"Body is a star (bodyName: {body.name}) in {saveNode}, skipping");
                     continue;
                 }
-                if (!GetBodyOrbit(body, out Orbit orbit)) continue;
+                if (!Util.GetBodyOrbit(body, out Orbit orbit)) continue;
 
                 ConfigNode bodyNode = orbits.GetNode(body.name);
                 if (bodyNode == null)
@@ -563,14 +592,14 @@ namespace CelestialBodyMover
 
             // TODO: look into fixing kopernicus bug in https://github.com/Kopernicus/Kopernicus/issues/825
             Vessel vessel = FlightGlobals.ActiveVessel;
-            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && vessel.state != Vessel.State.DEAD;
+            bool isFlight = Util.IsFlight();
             if ((!isActive || !isFlight) && !forceVector.IsZero()) forceVector = Vector3d.zero;
             if (isFlight || HighLogic.LoadedScene == GameScenes.TRACKSTATION || HighLogic.LoadedScene == GameScenes.SPACECENTER)
             {
                 if (isFlight)
                 {
                     mainBody = vessel.mainBody;
-                    if (!isActive || !isFrozen || !includeBodyMass) BodyPartModule.RemoveModule(vessel); // want to make sure this is done even if body orbit is bad or whatever
+                    //if (!isActive || !isFrozen || !includeBodyMass) BodyPartModule.RemoveModule(vessel); // want to make sure this is done even if body orbit is bad or whatever
                 }
                 else if (HighLogic.LoadedScene == GameScenes.TRACKSTATION)
                 {
@@ -581,7 +610,7 @@ namespace CelestialBodyMover
                     mainBody = FlightGlobals.GetHomeBody();
                 }
 
-                if (GetBodyOrbit(mainBody, out Orbit orbit))
+                if (Util.GetBodyOrbit(mainBody, out Orbit orbit))
                 {
                     double currentUT = Planetarium.GetUniversalTime();
                     bodyVelocity = orbit.getOrbitalVelocityAtUT(currentUT);
@@ -591,7 +620,7 @@ namespace CelestialBodyMover
                         {
                             StopImpactCoroutine();
 
-                            if (includeBodyMass) BodyPartModule.AddModule(vessel, mainBody); // do this after stopping the impact coroutine
+                            //if (includeBodyMass) BodyPartModule.AddModule(vessel, mainBody); // do this after stopping the impact coroutine
                             MakeVesselStationary();
                             forceVector = GetVesselThrust();
                         }
@@ -749,20 +778,23 @@ namespace CelestialBodyMover
             }
             
             Vessel vessel = FlightGlobals.ActiveVessel;
-            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && vessel != null && vessel.state != Vessel.State.DEAD && vessel.mainBody == mainBody;
+            bool isFlight = Util.IsFlight() && vessel?.mainBody == mainBody;
 
             GUILayout.BeginHorizontal();
             string activeText = isActive ? "Deactivate CBM" : "Activate CBM";
             string activeTooltip = "";
             GUI.enabled = isFlight;
             if (!isFlight) activeTooltip = "This button is currently disabled, as you are not in flight";
-            ResetWindowButton(ref isActive, activeText, activeTooltip, GUILayout.Width(300f - 30f));
+            if (ResetWindowButton(ref isActive, activeText, activeTooltip, GUILayout.Width(300f - 30f)))
+            {
+                vessel.VesselDeltaV.SetCalcsDirty(true, true);
+            }
             GUI.enabled = true;
             ShowSettingsButton();
             GUILayout.EndHorizontal();
 
             double currentUT = Planetarium.GetUniversalTime();
-            if (GetBodyOrbit(mainBody, out Orbit orbit))
+            if (Util.GetBodyOrbit(mainBody, out Orbit orbit))
             {
                 if (isFlight && isActive)
                 {
@@ -770,6 +802,8 @@ namespace CelestialBodyMover
                     string frozenButton = isFrozen ? "Unfreeze Craft" : "Freeze Craft";
                     if (ResetWindowButton(ref isFrozen, frozenButton))
                     {
+                        vessel.VesselDeltaV.SetCalcsDirty(true, true);
+
                         if (!isFrozen && killThrottleOnUnfreeze)
                         {
                             FlightInputHandler.state.mainThrottle = 0f;
@@ -857,24 +891,28 @@ namespace CelestialBodyMover
                             }
                         }
                     }
-
-                    if (showVesselInfo)
-                    {
-                        DrawLine();
-
-                        GUILayout.Label("Vessel Details:");
-                        double radius = radiusVec.magnitude;
-                        double gravitationalAcceleration = mainBody.gravParameter / (radius * radius);
-                        LabelValueDouble("Gravitational Acceleration:", -gravitationalAcceleration, "m/s\u00B2", includeSpace: false);
-                        double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
-                        LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2");
-                        LabelValueDouble("Mass:", GetVesselMass(vessel, true), "kg");
-                        double deltaV = vessel.VesselDeltaV.GetSituationTotalDeltaV(DeltaVGlobals.DeltaVAppValues.situation);
-                        LabelValueDouble("Delta V:", deltaV, "m/s");
-                    }
                 }
 
                 string displayName = mainBody.displayName.LocalizeRemoveGender();
+
+                if (isFlight && showVesselInfo)
+                {
+                    DrawLine();
+
+                    GUILayout.Label("Vessel Details:");
+                    double radius = radiusVec.magnitude;
+                    double gravitationalAcceleration = mainBody.gravParameter / (radius * radius);
+                    LabelValueDouble("Gravitational Acceleration:", -gravitationalAcceleration, "m/s\u00B2", includeSpace: false);
+                    double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
+                    LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2");
+                    double actualMass = GetVesselMass(vessel, true);
+                    double mass = actualMass + (DeltaVPartInfoPatches.ValidSituation() ? mainBody.Mass : 0d);
+                    string massTooltip = DeltaVPartInfoPatches.ValidSituation() ? $"Currently factoring in the mass of {displayName} for vessel mass, the actual vessel mass is {actualMass:G5} kg" : "";
+                    LabelValueDouble("Mass:", mass, "kg", massTooltip);
+                    double deltaV = vessel.VesselDeltaV.GetSituationTotalDeltaV(DeltaVGlobals.DeltaVAppValues.situation);
+                    LabelValueDouble("Delta V:", deltaV, "m/s");
+                }
+
                 string refBodyDisplayName = orbit.referenceBody.displayName.LocalizeRemoveGender();
                 if (showBodyInfo)
                 {
@@ -967,6 +1005,11 @@ namespace CelestialBodyMover
                     }
                 }
 
+                if (GUILayout.Button("setcalcsdirty"))
+                {
+                    vessel.VesselDeltaV.SetCalcsDirty(true, true);
+                }
+
                 //void SetLatLong(Vector3d vector)
                 //{
                 //    if (vessel != null)
@@ -1020,7 +1063,8 @@ namespace CelestialBodyMover
 
         private void MakeSettingsWindow(int id)
         {
-            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel?.mainBody == mainBody;
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            bool isFlight = Util.IsFlight() && vessel?.mainBody == mainBody;
 
             LabelValueDouble("Max Surface Height:", maxSurfaceHeight , "m", $"Vessel must be below this height when frozen in order for its thrust to be considered valid");
             maxSurfaceHeight = Mathf.Round(GUILayout.HorizontalSlider(maxSurfaceHeight, 0f, 200f));
@@ -1029,7 +1073,7 @@ namespace CelestialBodyMover
             lineLengthExponent = Mathf.Round(GUILayout.HorizontalSlider(lineLengthExponent, 0f, 10f));
 
             LabelValueDouble("Minimum Impact Speed:", minImpactSpeed, "", "If KSP does not recognize an impact, this is the minimum speed at which an impact will always be counted");
-            minImpactSpeed = Mathf.Round(GUILayout.HorizontalSlider(minImpactSpeed, 0f, 10f));
+            minImpactSpeed = Mathf.Round(GUILayout.HorizontalSlider(minImpactSpeed, 0f, 100f));
 
             GUILayout.Space(10);
 
@@ -1043,7 +1087,10 @@ namespace CelestialBodyMover
             string includeBodyMassText = includeBodyMass ? "Remove Body from Vessel Mass" : "Add Body to Vessel Mass";
             string includeBodyMassTooltip = isFlight && isFrozen ? "" : "\nThis button is currently disabled, as your craft is not currently frozen";
             GUI.enabled = isFlight && isActive && isFrozen;
-            BoolButton(ref includeBodyMass, includeBodyMassText, $"Add the mass of the body to the mass of the vessel when frozen, to allow for accurate delta-V calculations" + includeBodyMassTooltip);
+            if (BoolButton(ref includeBodyMass, includeBodyMassText, $"Add the mass of the body to the mass of the vessel when frozen, to allow for accurate delta-V calculations" + includeBodyMassTooltip))
+            {
+                vessel.VesselDeltaV.SetCalcsDirty(true, true);
+            }
             GUI.enabled = true;
 
             string showVesselText = showVesselInfo ? "Hide Vessel Info" : "Show Vessel Info";
@@ -1187,38 +1234,11 @@ namespace CelestialBodyMover
             return tSign != -1 ? timeString : "-" + timeString;
         }
 
-        private bool GetBodyOrbit(CelestialBody body, out Orbit orbit)
-        {
-            if (body == null)
-            {
-                Util.LogError($"body is null in GetBodyOrbit (body: {body})");
-                orbit = null;
-                return false;
-            }
-            else if (body.isStar)
-            {
-                //Util.Log($"body is a star in GetBodyOrbit (body: {body.name}, body.isStar: {body.isStar})");
-                orbit = null;
-                return false;
-            }
-            else if (body.orbit == null)
-            {
-                Util.LogError($"body.orbit is null in GetBodyOrbit (body: {body.name}, body.orbit: {body.orbit})");
-                orbit = null;
-                return false;
-            }
-            else
-            {
-                orbit = body.orbit;
-                return true;
-            }
-        }
-
         private Vector3d GetRadialVector()
         {
             double currentUT = Planetarium.GetUniversalTime();
 
-            if (!GetBodyOrbit(mainBody, out Orbit orbit))
+            if (!Util.GetBodyOrbit(mainBody, out Orbit orbit))
             {
                 return Vector3d.zero;
             }
@@ -1230,7 +1250,7 @@ namespace CelestialBodyMover
         {
             double currentUT = Planetarium.GetUniversalTime();
 
-            if (!GetBodyOrbit(mainBody, out Orbit orbit))
+            if (!Util.GetBodyOrbit(mainBody, out Orbit orbit))
             {
                 return Vector3d.zero;
             }
@@ -1258,7 +1278,7 @@ namespace CelestialBodyMover
         {
             double currentUT = Planetarium.GetUniversalTime();
 
-            if (!GetBodyOrbit(mainBody, out Orbit orbit))
+            if (!Util.GetBodyOrbit(mainBody, out Orbit orbit))
             {
                 return Vector3d.zero;
             }
@@ -1293,10 +1313,10 @@ namespace CelestialBodyMover
         private double GetVesselMass(Vessel vessel, bool includeBody) 
         {
             double mass = vessel.totalMass * 1000f; // convert from tons to kg
-            if (!includeBody && BodyPartModule.ModuleExists(vessel))
-            {
-                mass -= mainBody.Mass;
-            }
+            //if (!includeBody && BodyPartModule.ModuleExists(vessel))
+            //{
+            //    mass -= mainBody.Mass;
+            //}
             return mass;
         }
 
@@ -1615,7 +1635,7 @@ namespace CelestialBodyMover
 
         private bool StopImpactCoroutine(Vessel vesselParam)
         {
-            if (!HighLogic.LoadedSceneIsFlight || vesselParam == null || !GetBodyOrbit(vesselParam.mainBody, out _) || !isActive || isFrozen)
+            if (!HighLogic.LoadedSceneIsFlight || vesselParam == null || !Util.GetBodyOrbit(vesselParam.mainBody, out _) || !isActive || isFrozen)
             {
                 //Util.Log($"StopImpactCoroutine(Vessel vesselParam) triggered. !HighLogic.LoadedSceneIsFlight: {!HighLogic.LoadedSceneIsFlight}, vesselParam == null: {vesselParam == null}, !isActive: {!isActive}, isFrozen: {isFrozen}");
                 impactCoroutine = null;
@@ -1664,7 +1684,7 @@ namespace CelestialBodyMover
 
                 //Util.Log($"Triggered impact coroutine 2, impactDetected: {impactDetected}");
 
-                if (vessel.id == vesselID && !VectorNullOrZero(vesselVelocity) && GetBodyOrbit(mainBody, out _) && !VectorNullOrZero(bodyVelocity))
+                if (vessel.id == vesselID && !VectorNullOrZero(vesselVelocity) && Util.GetBodyOrbit(mainBody, out _) && !VectorNullOrZero(bodyVelocity))
                 {
                     // third OR statement is copied from Vessel.CheckKill()
                     if (impactDetected || Math.Abs(vesselVerticalSpeed) > minImpactSpeed || (!vessel.LandedOrSplashed && !vessel.HoldPhysics && vessel.altitude < ((vessel.terrainAltitude != -1d) ? vessel.terrainAltitude : -250d)))
