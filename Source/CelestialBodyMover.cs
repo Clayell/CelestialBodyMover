@@ -159,6 +159,8 @@ namespace CelestialBodyMover
         [KSPField(isPersistant = true)]
         bool formatTime = true;
         [KSPField(isPersistant = true)]
+        bool includeBodyMass = true;
+        [KSPField(isPersistant = true)]
         bool debugMode = false; // TODO add menu to modify orbit manually if debugMode is on
 
         // TODO: add retrograde, radial-in, and anti-normal lines too?
@@ -568,6 +570,7 @@ namespace CelestialBodyMover
                 if (isFlight)
                 {
                     mainBody = vessel.mainBody;
+                    if (!isActive || !isFrozen || !includeBodyMass) BodyPartModule.RemoveModule(vessel); // want to make sure this is done even if body orbit is bad or whatever
                 }
                 else if (HighLogic.LoadedScene == GameScenes.TRACKSTATION)
                 {
@@ -586,20 +589,17 @@ namespace CelestialBodyMover
                     {
                         if (isFrozen)
                         {
+                            StopImpactCoroutine();
+
+                            if (includeBodyMass) BodyPartModule.AddModule(vessel, mainBody); // do this after stopping the impact coroutine
                             MakeVesselStationary();
                             forceVector = GetVesselThrust();
-
-                            StopImpactCoroutine();
                         }
                         else
                         {
                             forceVector = GetGravitationalForce(-radiusVec); // radiusVec here needs to be from body to vessel
 
-                            if (impactCoroutine == null)
-                            {
-                                //Util.Log($"Starting impact coroutine");
-                                impactCoroutine = StartCoroutine(ImpactCoroutine());
-                            }
+                            StartImpactCoroutine();
                         }
 
                         if (!forceVector.IsZero()) MoveBodyForce(vessel, mainBody, forceVector, isFrozen, radiusVec, bodyVelocity, currentUT);
@@ -868,7 +868,9 @@ namespace CelestialBodyMover
                         LabelValueDouble("Gravitational Acceleration:", -gravitationalAcceleration, "m/s\u00B2", includeSpace: false);
                         double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
                         LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2");
-                        LabelValueDouble("Mass:", GetVesselMass(vessel), "kg");
+                        LabelValueDouble("Mass:", GetVesselMass(vessel, true), "kg");
+                        double deltaV = vessel.VesselDeltaV.GetSituationTotalDeltaV(DeltaVGlobals.DeltaVAppValues.situation);
+                        LabelValueDouble("Delta V:", deltaV, "m/s");
                     }
                 }
 
@@ -965,50 +967,50 @@ namespace CelestialBodyMover
                     }
                 }
 
-                void SetLatLong(Vector3d vector)
-                {
-                    if (vessel != null)
-                    {
-                        Vector3d dir = vector + mainBody.orbit.getPositionAtUT(currentUT);
+                //void SetLatLong(Vector3d vector)
+                //{
+                //    if (vessel != null)
+                //    {
+                //        Vector3d dir = vector + mainBody.orbit.getPositionAtUT(currentUT);
 
-                        double latitude = Math.Asin(vector.y) * radToDeg;
-                        double longitude = Math.Atan2(vector.x, vector.z) * radToDeg; // TODO: this is right for normal/antinormal, but not for prograde/retrograde and radial-in/out
-                        double altitude = Math.Round(Mathf.Max(vessel.vesselSize.x, vessel.vesselSize.y, vessel.vesselSize.z), 2) * 0.5 + 15d; // SetPosition.GetSugestedAltitude (typo)
-                        //Util.Log($"latitude: {latitude}, longitude: {longitude}, altitude: {altitude}, vector: {vector}, vector.magnitude: {vector.magnitude}, dir: {dir}, mainBody.transform.position: {mainBody.transform.position}, mainBody.position: {mainBody.position}, mainBody.getPositionAtUT(currentUT): {mainBody.getPositionAtUT(currentUT)}, mainBody.orbit.getPositionAtUT(currentUT): {mainBody.orbit.getPositionAtUT(currentUT)}, mainBody.initialRotation: {mainBody.initialRotation}, rotationAngle: {mainBody.rotationAngle}");
-                        FlightGlobals.fetch.SetVesselPosition(mainBody.flightGlobalsIndex, latitude, longitude, altitude, -90d, 90d, true, true);
-                    }
-                }
+                //        double latitude = Math.Asin(vector.y) * radToDeg;
+                //        double longitude = Math.Atan2(vector.x, vector.z) * radToDeg; // TODO: this is right for normal/antinormal, but not for prograde/retrograde and radial-in/out
+                //        double altitude = Math.Round(Mathf.Max(vessel.vesselSize.x, vessel.vesselSize.y, vessel.vesselSize.z), 2) * 0.5 + 15d; // SetPosition.GetSugestedAltitude (typo)
+                //        //Util.Log($"latitude: {latitude}, longitude: {longitude}, altitude: {altitude}, vector: {vector}, vector.magnitude: {vector.magnitude}, dir: {dir}, mainBody.transform.position: {mainBody.transform.position}, mainBody.position: {mainBody.position}, mainBody.getPositionAtUT(currentUT): {mainBody.getPositionAtUT(currentUT)}, mainBody.orbit.getPositionAtUT(currentUT): {mainBody.orbit.getPositionAtUT(currentUT)}, mainBody.initialRotation: {mainBody.initialRotation}, rotationAngle: {mainBody.rotationAngle}");
+                //        FlightGlobals.fetch.SetVesselPosition(mainBody.flightGlobalsIndex, latitude, longitude, altitude, -90d, 90d, true, true);
+                //    }
+                //}
                  
-                // prograde/retrograde and radial-in/out dont work. TODO fix
-                if (GUILayout.Button("PROGRADE VECTOR"))
-                {
-                    SetLatLong(progradeVector);
-                }
+                //// prograde/retrograde and radial-in/out dont work. TODO fix
+                //if (GUILayout.Button("PROGRADE VECTOR"))
+                //{
+                //    SetLatLong(progradeVector);
+                //}
 
-                if (GUILayout.Button("RETROGRADE VECTOR"))
-                {
-                    SetLatLong(-progradeVector);
-                }
+                //if (GUILayout.Button("RETROGRADE VECTOR"))
+                //{
+                //    SetLatLong(-progradeVector);
+                //}
 
-                if (GUILayout.Button("NORMAL VECTOR"))
-                {
-                    SetLatLong(normalVector);
-                }
+                //if (GUILayout.Button("NORMAL VECTOR"))
+                //{
+                //    SetLatLong(normalVector);
+                //}
 
-                if (GUILayout.Button("ANTINORMAL VECTOR"))
-                {
-                    SetLatLong(-normalVector);
-                }
+                //if (GUILayout.Button("ANTINORMAL VECTOR"))
+                //{
+                //    SetLatLong(-normalVector);
+                //}
 
-                if (GUILayout.Button("RADIAL OUT VECTOR"))
-                {
-                    SetLatLong(radialVector);
-                }
+                //if (GUILayout.Button("RADIAL OUT VECTOR"))
+                //{
+                //    SetLatLong(radialVector);
+                //}
 
-                if (GUILayout.Button("RADIAL IN VECTOR"))
-                {
-                    SetLatLong(-radialVector);
-                }
+                //if (GUILayout.Button("RADIAL IN VECTOR"))
+                //{
+                //    SetLatLong(-radialVector);
+                //}
             }
 
             Tooltip.Instance?.RecordTooltip(id);
@@ -1018,6 +1020,8 @@ namespace CelestialBodyMover
 
         private void MakeSettingsWindow(int id)
         {
+            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel?.mainBody == mainBody;
+
             LabelValueDouble("Max Surface Height:", maxSurfaceHeight , "m", $"Vessel must be below this height when frozen in order for its thrust to be considered valid");
             maxSurfaceHeight = Mathf.Round(GUILayout.HorizontalSlider(maxSurfaceHeight, 0f, 200f));
 
@@ -1036,7 +1040,12 @@ namespace CelestialBodyMover
             string formatTimeText = formatTime ? "Disable Time Formatting" : "Enable Time Formatting";
             BoolButton(ref formatTime, formatTimeText, $"Toggle between displaying time in only seconds or in {homeBody} years, {homeBody} solar days, hours, minutes, and seconds");
 
-            bool isFlight = HighLogic.LoadedScene == GameScenes.FLIGHT && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel?.mainBody == mainBody;
+            string includeBodyMassText = includeBodyMass ? "Remove Body from Vessel Mass" : "Add Body to Vessel Mass";
+            string includeBodyMassTooltip = isFlight && isFrozen ? "" : "\nThis button is currently disabled, as your craft is not currently frozen";
+            GUI.enabled = isFlight && isActive && isFrozen;
+            BoolButton(ref includeBodyMass, includeBodyMassText, $"Add the mass of the body to the mass of the vessel when frozen, to allow for accurate delta-V calculations" + includeBodyMassTooltip);
+            GUI.enabled = true;
+
             string showVesselText = showVesselInfo ? "Hide Vessel Info" : "Show Vessel Info";
             string showVesselTooltip = isFlight ? "" : "\nThis button is currently disabled, as you are not in flight";
             GUI.enabled = isFlight;
@@ -1281,7 +1290,15 @@ namespace CelestialBodyMover
 
         private bool InRailsWarp() => TimeWarp.CurrentRate != 1f && TimeWarp.WarpMode == TimeWarp.Modes.HIGH; // mode.high is non-physics time warp
 
-        private double GetVesselMass(Vessel vessel) => vessel.totalMass * 1000d; // convert from tons to kg
+        private double GetVesselMass(Vessel vessel, bool includeBody) 
+        {
+            double mass = vessel.totalMass * 1000f; // convert from tons to kg
+            if (!includeBody && BodyPartModule.ModuleExists(vessel))
+            {
+                mass -= mainBody.Mass;
+            }
+            return mass;
+        }
 
         private Vector3d GetVesselThrust()
         {
@@ -1373,7 +1390,7 @@ namespace CelestialBodyMover
         {
             Vessel vessel = FlightGlobals.ActiveVessel;
             if (vessel.LandedOrSplashed) return Vector3d.zero;
-            double vesselMass = GetVesselMass(vessel);
+            double vesselMass = GetVesselMass(vessel, false);
             CelestialBody body = vessel.mainBody;
 
             Vector3d toBody = radiusVec.normalized;
@@ -1453,7 +1470,7 @@ namespace CelestialBodyMover
                 return;
             }
 
-            double vesselMass = GetVesselMass(vessel);
+            double vesselMass = GetVesselMass(vessel, false);
             Orbit orbit = body.orbit;
             double totalMass = body.Mass + vesselMass;
             const double tolerance = 1e-3d;
@@ -1510,7 +1527,7 @@ namespace CelestialBodyMover
         {
             Vector3d normal = -radiusVec.normalized;
 
-            double vesselMass = GetVesselMass(vessel);
+            double vesselMass = GetVesselMass(vessel, false);
             double sumInverseMass = (1d / vesselMass) + (1d / body.Mass);
             Orbit orbit = body.orbit;
 
@@ -1576,6 +1593,15 @@ namespace CelestialBodyMover
         private void ImpactDetected(EventReport evt) => impactDetected = true;
         private void ImpactDetected(Vessel vessel) => impactDetected = true;
         private void ImpactDetected(Part p, RaycastHit r) => impactDetected = true;
+
+        private void StartImpactCoroutine()
+        {
+            if (impactCoroutine == null)
+            {
+                //Util.Log($"Starting impact coroutine");
+                impactCoroutine = StartCoroutine(ImpactCoroutine());
+            }
+        }
 
         private void StopImpactCoroutine()
         {
