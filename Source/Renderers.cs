@@ -153,7 +153,7 @@ namespace CelestialBodyMover
             OnStart();
             _Line = RenderUtils.InitLine(_objLine, color, 10, orbitLines); // this is so we can set the color here
 
-            _startDrawing = DateTime.Now; // TODO, base this on currentUT instead, so it draws quicker with time warp?
+            _startDrawing = DateTime.Now;
             if (visibilityChanged) _currentDrawingState = DrawingState.DrawingLinesAppearing;
             else _currentDrawingState = DrawingState.DrawingFullPicture;
 

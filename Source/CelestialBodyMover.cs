@@ -242,7 +242,7 @@ namespace CelestialBodyMover
         {
             Instance = this; // this needs to be here and not in the normal Awake()
 
-            Util.Log("Awake called");
+            //Util.Log("Awake called");
 
             GameEvents.onShowUI.Add(KSPShowGUI);
             GameEvents.onHideUI.Add(KSPHideGUI);
@@ -266,11 +266,11 @@ namespace CelestialBodyMover
 
         void Start()
         {
-            Util.Log("Start called");
+            //Util.Log("Start called");
 
             Texture2D LoadImage(string url)
             {
-                Util.Log($"Loaded {url} image");
+                Util.Log($"Loaded {url} image.");
                 return GameDatabase.Instance.GetTexture("CelestialBodyMover/Icons/" + url, false);
             }
 
@@ -295,7 +295,7 @@ namespace CelestialBodyMover
 
         void OnDestroy()
         {
-            Util.Log("OnDestroy called");
+            //Util.Log("OnDestroy called");
 
             Destroy(toolbarControl);
             toolbarControl = null;
@@ -349,7 +349,7 @@ namespace CelestialBodyMover
 
         private void OnSceneChange(GameScenes s)
         {
-            Util.Log($"Scene changing to {s}");
+            //Util.Log($"Scene changing to {s}");
 
             isLoading = true;
 
@@ -1471,7 +1471,7 @@ namespace CelestialBodyMover
             if (Vector3d.Dot(originalAngularVelocity, newAngularVelocity) < 0d)
             {
                 body.rotationPeriod = -body.rotationPeriod;
-                Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Angular Velocity: {originalAngularVelocity}, New Angular Velocity: {newAngularVelocity}, Original Rotation Period: {initialPeriod}, New Rotation Period: {body.rotationPeriod}");
+                Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Angular Velocity: {originalAngularVelocity}, New Angular Velocity: {newAngularVelocity}, Original Rotation Period: {initialPeriod}, New Rotation Period: {body.rotationPeriod}.");
             }
             body.initialRotation = (body.rotationAngle - 360d * (1d / newPeriod) * currentUT) % 360d; // work backwards from rotationAngle = (initialRotation + 360.0 * rotPeriodRecip * Planetarium.GetUniversalTime()) % 360.0;
             // rotationAngle is left unchanged
