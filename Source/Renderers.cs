@@ -38,8 +38,8 @@ namespace CelestialBodyMover
             Vector3 dist = endPos - startPos;
             Vector3 dir = dist.normalized;
             Vector3 viewDir = (endPos - camPos).normalized;
-            float arrowSize = 0.05f * dist.magnitude;
 
+            float arrowSize = 0.05f * dist.magnitude;
             Vector3 right = Vector3.Cross(dir, viewDir).normalized;
             Vector3 dirArrow = dir * arrowSize;
             Vector3 rightArrow = right * arrowSize * 0.5f;
@@ -83,10 +83,10 @@ namespace CelestialBodyMover
 
         DateTime _startDrawing;
 
-        // Nullability: initialized in Start(), de-initialized in OnDestroy()
+        // Nullability: initialized in OnStart(), de-initialized in OnDestroy()
         GameObject _objLine = null;
 
-        // Nullability: initialized in Start(), de-initialized in OnDestroy()
+        // Nullability: initialized in OnStart(), de-initialized in OnDestroy()
         LineRenderer _Line = null;
 
         const double AppearTime = 0.5;
@@ -181,7 +181,7 @@ namespace CelestialBodyMover
 
             float pctDone;
 
-            Vector3d center = BodyOrigin.transform.position; // TODO, change this to just BodyOrigin.position? the center seems to jiggle a lot if the body is moving fast and far away from origin in tracking station
+            Vector3d center = BodyOrigin.position;
             switch (_currentDrawingState)
             {
                 case DrawingState.Hidden: // this shouldnt be possible
