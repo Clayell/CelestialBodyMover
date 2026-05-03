@@ -887,7 +887,7 @@ namespace CelestialBodyMover
                     LabelValueDouble("Gravitational Acceleration:", -gravitationalAcceleration, "m/s\u00B2", includeSpace: false);
                     double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
                     LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2");
-                    double actualMass = GetVesselMass(vessel, true);
+                    double actualMass = GetVesselMass(vessel);
                     double mass = actualMass + (Util.ValidSituation() ? mainBody.Mass : 0d);
                     string massTooltip = Util.ValidSituation() ? $"Currently factoring in the mass of {displayName} for vessel mass, the actual vessel mass is {actualMass:G5} kg" : "";
                     LabelValueDouble("Mass:", mass, "kg", massTooltip);
@@ -1184,10 +1184,10 @@ namespace CelestialBodyMover
 
         private string FormatTime(double t)
         {
-            CelestialBody homeBody = FlightGlobals.GetHomeBody();
-
             if (double.IsNaN(t)) return "NaN";
             if (double.IsInfinity(t)) return "Infinity";
+
+            CelestialBody homeBody = FlightGlobals.GetHomeBody();
 
             int tSign = Math.Sign(t);
             t = Math.Abs(t);
@@ -1209,7 +1209,7 @@ namespace CelestialBodyMover
             if (days > 0d) timeString += $"{days}d ";
             if (hours > 0d) timeString += $"{hours}h ";
             if (minutes > 0d) timeString += $"{minutes}m ";
-            if (string.IsNullOrEmpty(timeString) || seconds != 0d) timeString += $"{seconds:G5}s"; // check if not == 0 to avoid 1y 0s
+            if (string.IsNullOrEmpty(timeString) || seconds != 0d) timeString += $"{seconds:G5}s"; // check if != 0 to avoid 1y 0s
 
             return tSign != -1 ? timeString : "-" + timeString;
         }
@@ -1235,22 +1235,23 @@ namespace CelestialBodyMover
                 return Vector3d.zero;
             }
 
-            Orbit fakeOrbit = new Orbit();
             const double epsilon = 1e-9d;
             if (orbit.inclination > epsilon && Math.Abs(orbit.inclination - 180d) > epsilon)
             {
-                fakeOrbit = orbit;
+                return -orbit.Normal(currentUT); // use negative bc KSP gives left handed stuff
             }
             else
             {
+                Orbit fakeOrbit = new Orbit();
+
                 double newInclination;
                 if (orbit.inclination <= epsilon) newInclination = epsilon;
                 else newInclination = 180d - epsilon;
 
                 fakeOrbit.SetOrbit(newInclination, orbit.eccentricity, orbit.semiMajorAxis, orbit.LAN, orbit.argumentOfPeriapsis, orbit.meanAnomalyAtEpoch, orbit.epoch, orbit.referenceBody);
-            }
 
-            return -fakeOrbit.Normal(currentUT); // use negative bc KSP gives left handed stuff
+                return -fakeOrbit.Normal(currentUT); // use negative bc KSP gives left handed stuff
+            }
         }
 
         private Vector3d GetProgradeVector()
@@ -1289,13 +1290,9 @@ namespace CelestialBodyMover
 
         private bool InRailsWarp() => TimeWarp.CurrentRate != 1f && TimeWarp.WarpMode == TimeWarp.Modes.HIGH; // mode.high is non-physics time warp
 
-        private double GetVesselMass(Vessel vessel, bool includeBody) 
+        private double GetVesselMass(Vessel vessel) 
         {
             double mass = vessel.totalMass * 1000f; // convert from tons to kg
-            //if (!includeBody && BodyPartModule.ModuleExists(vessel))
-            //{
-            //    mass -= mainBody.Mass;
-            //}
             return mass;
         }
 
@@ -1394,7 +1391,7 @@ namespace CelestialBodyMover
         {
             Vessel vessel = FlightGlobals.ActiveVessel;
             if (vessel.LandedOrSplashed) return Vector3d.zero;
-            double vesselMass = GetVesselMass(vessel, false);
+            double vesselMass = GetVesselMass(vessel);
             CelestialBody body = vessel.mainBody;
 
             Vector3d toBody = radiusVec.normalized;
@@ -1445,7 +1442,7 @@ namespace CelestialBodyMover
 
         private void SetAngularVelocity(Vector3d originalAngularVelocity, Vector3d newAngularVelocity, ref CelestialBody body, double currentUT)
         {
-            if (body.tidallyLocked) body.tidallyLocked = false; //
+            if (body.tidallyLocked) body.tidallyLocked = false;
             
             double initialPeriod = body.rotationPeriod;
             double newPeriod = tau / newAngularVelocity.magnitude;
@@ -1454,7 +1451,8 @@ namespace CelestialBodyMover
             if (Vector3d.Dot(originalAngularVelocity, newAngularVelocity) < 0d)
             {
                 body.rotationPeriod = -body.rotationPeriod;
-                Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Angular Velocity: {originalAngularVelocity}, New Angular Velocity: {newAngularVelocity}, Original Rotation Period: {initialPeriod}, New Rotation Period: {body.rotationPeriod}.");
+                Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Rotation Period: {initialPeriod:G5}, New Rotation Period: {body.rotationPeriod:G5}.");
+                //Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Angular Velocity: {originalAngularVelocity}, New Angular Velocity: {newAngularVelocity}, Original Rotation Period: {initialPeriod}, New Rotation Period: {body.rotationPeriod}.");
             }
             body.initialRotation = (body.rotationAngle - 360d * (1d / newPeriod) * currentUT) % 360d; // work backwards from rotationAngle = (initialRotation + 360.0 * rotPeriodRecip * Planetarium.GetUniversalTime()) % 360.0;
             // rotationAngle is left unchanged
@@ -1474,12 +1472,10 @@ namespace CelestialBodyMover
                 return;
             }
 
-            double vesselMass = GetVesselMass(vessel, false);
+            double vesselMass = GetVesselMass(vessel);
             Orbit orbit = body.orbit;
             double totalMass = body.Mass + vesselMass;
             const double tolerance = 1e-3d;
-
-            // TODO: add a way to change reference body if it gets in the hill sphere, would need to use world vectors instead of local
 
             double effectiveThrust = forceVector.magnitude * alignmentToCenter;
             Vector3d forceOnPlanet = thrustNormal * effectiveThrust;
@@ -1531,7 +1527,7 @@ namespace CelestialBodyMover
         {
             Vector3d normal = -radiusVec.normalized;
 
-            double vesselMass = GetVesselMass(vessel, false);
+            double vesselMass = GetVesselMass(vessel);
             double sumInverseMass = (1d / vesselMass) + (1d / body.Mass);
             Orbit orbit = body.orbit;
 
@@ -1560,8 +1556,6 @@ namespace CelestialBodyMover
                 double vesselRotInertia = vesselMass * perpendicularRadius * perpendicularRadius;
                 double bodyRotInertia = (0.4 * body.Mass * body.Radius * body.Radius);
                 double rotationalInertia = bodyRotInertia + vesselRotInertia;
-
-                //Vector3d angularDeltaV = axis * Vector3d.Dot(Vector3d.Cross(-radiusVec, relativeVelocity), axis) * vesselMass / rotationalInertia;
 
                 double impulseTangent = velocityTangent.magnitude / sumInverseMass;
                 impulseTangent = Util.Clamp(impulseTangent, -Math.Abs(impulseNormal), Math.Abs(impulseNormal));

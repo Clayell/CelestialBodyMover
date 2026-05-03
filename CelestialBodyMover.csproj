@@ -73,6 +73,7 @@
     <None Include="GameData\CelestialBodyMover\README.md" />
     <None Include="git-scripts\DisableDebug.ps1" />
     <None Include="git-scripts\EnableDebug.ps1" />
+	<None Include="git-scripts\zip.ps1" />
     <None Include="Properties\AssemblyVersion.tt">
       <Generator>TextTemplatingFileGenerator</Generator>
       <LastGenOutput>AssemblyVersion.cs</LastGenOutput>
@@ -81,7 +82,6 @@
     <None Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\button-64.png" />
     <None Include="README.md" />
     <None Include="LICENSE.md" />
-    <None Include="git-scripts\zip.ps1" />
   </ItemGroup>
   <ItemGroup>
     <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />

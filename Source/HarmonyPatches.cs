@@ -35,65 +35,6 @@ namespace CelestialBodyMover
     [HarmonyPatch(typeof(OrbitDriver))]
     public static class OrbitDriverPatches
     {
-        private static bool InHillSphereAndSOI(CelestialBody child, CelestialBody newParent)
-        {
-            // the stock CelestialBody.hillSphere is incorrect in multiple ways
-
-            CelestialBody grandParent = newParent.referenceBody;
-
-            if (child == null || newParent == null)
-            {
-                return false;
-            }
-            if (newParent.isStar || grandParent == null || newParent.orbit == null)
-            {
-                return true;
-            }
-
-            double hillSphere = newParent.orbit.radius * Math.Pow(newParent.Mass / (3d * (grandParent.Mass + newParent.Mass)), 1d / 3d);
-            double SOI = newParent.sphereOfInfluence;
-            double distance = (child.position - newParent.position).magnitude;
-            //Util.Log($"InHillSphere: hillSphere: {hillSphere:E17}, distance: {distance:E17}, SOI: {SOI:E17}, result: {distance < Math.Min(hillSphere, SOI)}");
-
-            return distance < Math.Min(hillSphere, SOI);
-        }
-
-        //private static double GetHillSphere(CelestialBody body)
-        //{
-        //    CelestialBody parent = body?.referenceBody;
-
-        //    if (body == null || parent == null || body.orbit == null)
-        //    {
-        //        return double.NaN;
-        //    }
-
-        //    double hillSphere = body.orbit.radius * Math.Pow(body.Mass / (3d * (parent.Mass + body.Mass)), 1d / 3d);
-        //    //Util.Log($"GetHillSphere: hillSphere: {hillSphere:E17}");
-
-        //    return hillSphere;
-        //}
-
-        private static CelestialBody InSOI(Vector3d pos, CelestialBody body, CelestialBody testBody)
-        { // we could patch FlightGlobals.inSOI, but we only need to use it for this one thing
-            int count = body.orbitingBodies.Count;
-            if (count > 0)
-            {
-                for (int i = 0; i < count; i++)
-                {
-                    CelestialBody celestialBody = body.orbitingBodies[i];
-                    if (celestialBody == testBody)
-                    {
-                        continue;
-                    }
-                    if ((pos - celestialBody.position).sqrMagnitude < celestialBody.sphereOfInfluence * celestialBody.sphereOfInfluence)
-                    {
-                        return InSOI(pos, celestialBody, testBody);
-                    }
-                }
-            }
-            return body;
-        }
-
         internal static readonly FieldInfo readyField = AccessTools.Field(typeof(OrbitDriver), "ready");
         internal static readonly FieldInfo fdtLastField = AccessTools.Field(typeof(OrbitDriver), "fdtLast");
         internal static readonly FieldInfo isHyperbolicField = AccessTools.Field(typeof(OrbitDriver), "isHyperbolic");
@@ -219,6 +160,65 @@ namespace CelestialBodyMover
 
             __result = false;
             return false;
+        }
+
+        private static bool InHillSphereAndSOI(CelestialBody child, CelestialBody newParent)
+        {
+            // the stock CelestialBody.hillSphere is incorrect in multiple ways
+
+            CelestialBody grandParent = newParent.referenceBody;
+
+            if (child == null || newParent == null)
+            {
+                return false;
+            }
+            if (newParent.isStar || grandParent == null || newParent.orbit == null)
+            {
+                return true;
+            }
+
+            double hillSphere = newParent.orbit.radius * Math.Pow(newParent.Mass / (3d * (grandParent.Mass + newParent.Mass)), 1d / 3d);
+            double SOI = newParent.sphereOfInfluence;
+            double distance = (child.position - newParent.position).magnitude;
+            //Util.Log($"InHillSphere: hillSphere: {hillSphere:E17}, distance: {distance:E17}, SOI: {SOI:E17}, result: {distance < Math.Min(hillSphere, SOI)}");
+
+            return distance < Math.Min(hillSphere, SOI);
+        }
+
+        //private static double GetHillSphere(CelestialBody body)
+        //{
+        //    CelestialBody parent = body?.referenceBody;
+
+        //    if (body == null || parent == null || body.orbit == null)
+        //    {
+        //        return double.NaN;
+        //    }
+
+        //    double hillSphere = body.orbit.radius * Math.Pow(body.Mass / (3d * (parent.Mass + body.Mass)), 1d / 3d);
+        //    //Util.Log($"GetHillSphere: hillSphere: {hillSphere:E17}");
+
+        //    return hillSphere;
+        //}
+
+        private static CelestialBody InSOI(Vector3d pos, CelestialBody body, CelestialBody testBody)
+        { // we could patch FlightGlobals.inSOI, but we only need to use it for this one thing
+            int count = body.orbitingBodies.Count;
+            if (count > 0)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    CelestialBody celestialBody = body.orbitingBodies[i];
+                    if (celestialBody == testBody)
+                    {
+                        continue;
+                    }
+                    if ((pos - celestialBody.position).sqrMagnitude < celestialBody.sphereOfInfluence * celestialBody.sphereOfInfluence)
+                    {
+                        return InSOI(pos, celestialBody, testBody);
+                    }
+                }
+            }
+            return body;
         }
     }
 
