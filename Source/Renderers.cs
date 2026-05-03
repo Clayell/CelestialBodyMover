@@ -67,7 +67,7 @@ namespace CelestialBodyMover
 
         internal bool IsHiding => _currentDrawingState == DrawingState.Hiding || _currentDrawingState == DrawingState.Hidden;
 
-        float lineLength 
+        float LineLength 
         { get
             {
                 float value = 0f;
@@ -196,12 +196,12 @@ namespace CelestialBodyMover
                     }
                     pctDone = Mathf.Clamp01(pctDone);
 
-                    Vector3d partialdir1 = dir * Mathf.Lerp(0, lineLength, pctDone);
+                    Vector3d partialdir1 = dir * Mathf.Lerp(0, LineLength, pctDone);
                     RenderUtils.DrawLine(_Line, center, Vector3d.zero, partialdir1);
                     break;
 
                 case DrawingState.DrawingFullPicture:
-                    RenderUtils.DrawLine(_Line, center, Vector3d.zero, dir * lineLength);
+                    RenderUtils.DrawLine(_Line, center, Vector3d.zero, dir * LineLength);
                     break;
 
                 case DrawingState.Hiding:
@@ -209,7 +209,7 @@ namespace CelestialBodyMover
                     if (pctDone >= 1) { _currentDrawingState = DrawingState.Hidden; }
                     pctDone = Mathf.Clamp01(pctDone);
 
-                    float partialLineLength = Mathf.Lerp(lineLength, 0, pctDone);
+                    float partialLineLength = Mathf.Lerp(LineLength, 0, pctDone);
 
                     RenderUtils.DrawLine(_Line, center, Vector3d.zero, dir * partialLineLength);
                     break;
@@ -226,9 +226,9 @@ namespace CelestialBodyMover
             { return; }
 
             Vector3 center = BodyOrigin.position;
-            Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * 1.05f * PointDirection().normalized));
+            Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + LineLength * 1.05f * PointDirection().normalized));
 
-            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 100f, PlanetariumCamera.fetch.minDistance);
+            bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(LineLength / 100f, PlanetariumCamera.fetch.minDistance);
 
             // checking z coordinate hides labels when they're behind the camera
             if (dir.z > 0 && cameraNear) GUI.Label(new Rect(dir.x - 50, Screen.height - dir.y - 15, 100, 30), label, _styleLabel);

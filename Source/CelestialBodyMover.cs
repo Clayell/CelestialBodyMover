@@ -3,11 +3,14 @@ using KSP.Localization;
 using KSP.UI.Screens;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ToolbarControl_NS;
 using UnityEngine;
 using Situations = Vessel.Situations;
+
+#pragma warning disable IDE1006 // idc about naming rules
 
 namespace CelestialBodyMover
 {
@@ -76,6 +79,11 @@ namespace CelestialBodyMover
             }
         }
 
+        internal static string GetBodyName(CelestialBody body)
+        {
+            return body.displayName.LocalizeRemoveGender();
+        }
+
         internal static bool ValidSituation() => CelestialBodyMover.Instance != null && CelestialBodyMover.Instance.isActive && CelestialBodyMover.Instance.isFrozen && CelestialBodyMover.Instance.includeBodyMass;
     }
 
@@ -100,9 +108,21 @@ namespace CelestialBodyMover
 
         [KSPField(isPersistant = true)] bool showMainWindow = false;
         [KSPField(isPersistant = true)] bool showSettingsWindow = false;
+        [KSPField(isPersistant = true)] bool showBodySOIWindow = false;
+        bool showOrbitResetWindow = false;
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
         bool isLoading = false;
         bool isBadUI = false;
+
+        Rect mainRect = new Rect(200, 200, -1, -1);
+        Rect settingsRect = new Rect(200, 200, -1, -1);
+        Rect bodySOIRect = new Rect(200, 200, -1, -1);
+        Rect orbitResetRect = new Rect(200, 200, -1, -1);
+        [KSPField(isPersistant = true)] Vector2 mainRectPos = new Vector2(200, 200);
+        [KSPField(isPersistant = true)] Vector2 settingsRectPos = new Vector2(200, 200);
+        [KSPField(isPersistant = true)] Vector2 bodySOIRectPos = new Vector2(200, 200);
+        [KSPField(isPersistant = true)] Vector2 bodySOIRectScroll = new Vector2(0, 0);
+        bool needMainWindowChange = false;
 
         [KSPField(isPersistant = true)] bool firstLoad = true;
 
@@ -123,7 +143,7 @@ namespace CelestialBodyMover
                 if (((_alignmentToCenter <= 0d) != (value <= 0d)) || (_alignmentToCenter <= 1d - tolerance) != (value <= 1d - tolerance))
                 {
                     //Util.Log($"alignmentToCenter changed from {_alignmentToCenter} to {value}, resetting window");
-                    needWindowChange = true;
+                    needMainWindowChange = true;
                 }
                 _alignmentToCenter = value;
             }
@@ -148,8 +168,7 @@ namespace CelestialBodyMover
             {
                 if (_mainBody != value)
                 {
-                    //Util.Log($"mainBody changed from {_mainBody?.displayName?.LocalizeRemoveGender()} to {value?.displayName?.LocalizeRemoveGender()}");
-                    needWindowChange = true;
+                    needMainWindowChange = true;
                     HideAllRenderers();
                 }
                 _mainBody = value;
@@ -158,12 +177,6 @@ namespace CelestialBodyMover
 
         Vector3d currentPos;
 
-        Rect mainRect = new Rect(0, 0, -1, -1);
-        Rect settingsRect = new Rect(0, 0, -1, -1);
-        [KSPField(isPersistant = true)] Vector2 mainRectPos = new Vector2(100, 100);
-        [KSPField(isPersistant = true)] Vector2 settingsRectPos = new Vector2(200, 200);
-        bool needWindowChange = false;
-
         [KSPField(isPersistant = true)] bool showVesselInfo = true;
         [KSPField(isPersistant = true)] bool showBodyInfo = true;
         [KSPField(isPersistant = true)] bool showBodyOrbitInfo = true;
@@ -171,6 +184,7 @@ namespace CelestialBodyMover
         [KSPField(isPersistant = true)] float maxSurfaceHeight = 20f;
         [KSPField(isPersistant = true)] internal float lineLengthExponent = 5f;
         [KSPField(isPersistant = true)] bool killThrottleOnUnfreeze = true;
+        [KSPField(isPersistant = true)] bool toggleAllSOIChanges = false;
         [KSPField(isPersistant = true)] bool formatTime = true;
         [KSPField(isPersistant = true)] internal bool includeBodyMass = false;
         [KSPField(isPersistant = true)] bool debugMode = false; // TODO add menu to modify orbit manually if debugMode is on
@@ -191,7 +205,7 @@ namespace CelestialBodyMover
             {
                 if (_forceVector.IsZero() != value.IsZero())
                 {
-                    needWindowChange = true;
+                    needMainWindowChange = true;
                     needForceLineReset = true;
                 }
                 _forceVector = value;
@@ -200,7 +214,9 @@ namespace CelestialBodyMover
         bool needForceLineReset = false;
         [KSPField(isPersistant = true)] bool displayLines = true;
 
-        static string PluginDataFolder;
+        string PluginDataFolder;
+
+        internal readonly Dictionary<CelestialBody, bool> bodySOIDictionary = new Dictionary<CelestialBody, bool>();
 
         private void InitToolbar()
         {
@@ -358,6 +374,7 @@ namespace CelestialBodyMover
 
             MakeRect(ref mainRect, mainRectPos);
             MakeRect(ref settingsRect, settingsRectPos);
+            MakeRect(ref bodySOIRect, bodySOIRectPos);
         }
 
         private void SaveOrbitDetails(string saveNode)
@@ -431,7 +448,13 @@ namespace CelestialBodyMover
                 AddValue("referenceBody", orbit.referenceBody.name);
 
                 AddValue("rotationPeriod", body.rotationPeriod);
-                AddValue("initialRotation", body.initialRotation, true);
+                AddValue("initialRotation", body.initialRotation);
+
+                if (!bodySOIDictionary.TryGetValue(body, out bool CanChangeSOI))
+                {
+                    bodySOIDictionary[body] = CanChangeSOI = false;
+                }
+                AddValue("CanChangeSOI", CanChangeSOI, true);
 
                 //Util.Log($"Saved orbit for body {body.name}: " + log);
             }
@@ -535,7 +558,14 @@ namespace CelestialBodyMover
                 else log += $"referenceBody: {referenceBody}, ";
 
                 if (!DoubleParse("rotationPeriod", out double rotationPeriod)) continue;
-                if (!DoubleParse("initialRotation", out double initialRotation, true)) continue;
+                if (!DoubleParse("initialRotation", out double initialRotation)) continue;
+
+                if (!bool.TryParse(bodyNode.GetValue("CanChangeSOI"), out bool CanChangeSOI))
+                {
+                    Util.LogError($"Failed to parse CanChangeSOI ({CanChangeSOI}) for body {body.name} in {root}");
+                    continue;
+                }
+                else log += $"CanChangeSOI: {CanChangeSOI}.";
 
                 orbit.SetOrbit(inclination, eccentricity, semiMajorAxis, LAN, argumentOfPeriapsis, meanAnomaly, epoch, referenceBody);
                 FixParabolic(ref orbit);
@@ -546,6 +576,8 @@ namespace CelestialBodyMover
 
                 if (body.tidallyLocked) body.tidallyLocked = false;
                 body.CBUpdate(); // make sure this gets called before we do anything else
+
+                bodySOIDictionary[body] = CanChangeSOI;
 
                 //Util.Log($"Loading orbit for body {body.name}: " + log);
             }
@@ -688,7 +720,6 @@ namespace CelestialBodyMover
             if (showMainWindow && isKSPGUIActive && !isLoading && !isBadUI)
             {
                 int id0 = GetHashCode();
-                int id1 = id0 + 1;
 
                 mainRect = ClickThruBlocker.GUILayoutWindow(id0, mainRect, MakeMainWindow, "Celestial Body Mover", GUILayout.Width(300));
                 ClampToScreen(ref mainRect);
@@ -697,10 +728,31 @@ namespace CelestialBodyMover
 
                 if (showSettingsWindow)
                 {
+                    int id1 = id0 + 1;
+
                     settingsRect = ClickThruBlocker.GUILayoutWindow(id1, settingsRect, MakeSettingsWindow, "CBM Settings", GUILayout.Width(300));
                     ClampToScreen(ref settingsRect);
                     Tooltip.Instance?.ShowTooltip(id1);
                     SetRectPos(ref settingsRectPos, settingsRect);
+
+                    if (showBodySOIWindow)
+                    {
+                        int id2 = id0 + 2;
+
+                        bodySOIRect = ClickThruBlocker.GUILayoutWindow(id2, bodySOIRect, MakeBodySOIWindow, "Body-Specific SOI Settings", GUILayout.Width(350));
+                        ClampToScreen(ref bodySOIRect);
+                        Tooltip.Instance?.ShowTooltip(id2);
+                        SetRectPos(ref bodySOIRectPos, bodySOIRect);
+                    }
+
+                    if (showOrbitResetWindow)
+                    {
+                        int id3 = id0 + 3;
+
+                        orbitResetRect = ClickThruBlocker.GUILayoutWindow(id3, orbitResetRect, MakeOrbitResetWindow, "Confirm Reset All Orbits", GUILayout.Width(350));
+                        ClampToScreen(ref orbitResetRect);
+                        Tooltip.Instance?.ShowTooltip(id3);
+                    }
                 }
             }
         }
@@ -718,19 +770,24 @@ namespace CelestialBodyMover
             rect = new Rect(left, top, rect.width, rect.height);
         }
 
+        private void ResetWindow(ref Rect rect)
+        {
+            rect = new Rect(rect.xMin, rect.yMin, -1f, -1f); // Doing this forces the window to be resized
+        }
+
         private IEnumerator ResetMainWindowCoroutine()
         {
             yield return new WaitForEndOfFrame(); // wait until end of frame
 
-            mainRect = new Rect(mainRect.xMin, mainRect.yMin, -1f, -1f);
+            ResetWindow(ref mainRect);
         }
 
-        private void ResetMainWindow(ref bool needsReset) // This should only be used at the end of the current window
-        { // Doing this forces the window to be resized
-            if (needsReset)
+        private void ResetMainWindow()
+        {
+            if (needMainWindowChange)
             {
                 StartCoroutine(ResetMainWindowCoroutine());
-                needsReset = false;
+                needMainWindowChange = false;
             }
         }
 
@@ -769,12 +826,12 @@ namespace CelestialBodyMover
             string activeTooltip = "";
             GUI.enabled = isFlight;
             if (!isFlight) activeTooltip = "This button is currently disabled, as you are not in flight";
-            if (ResetWindowButton(ref isActive, activeText, activeTooltip, GUILayout.Width(300f - 30f)))
+            if (ResetWindowButton(ref isActive, activeText, activeTooltip, GUILayout.Width(270f))) // 300f - 30f
             {
                 vessel.VesselDeltaV.SetCalcsDirty(true, true);
             }
             GUI.enabled = true;
-            ShowSettingsButton();
+            ShowSettingsButton(ref showSettingsWindow, "Show Settings");
             GUILayout.EndHorizontal();
 
             double currentUT = Planetarium.GetUniversalTime();
@@ -832,7 +889,7 @@ namespace CelestialBodyMover
                         }
                         else
                         {
-                            GetForceDirections(forceVector, mainBody, out double forceRadial, out double forceNormal, out double forceTransverse);
+                            GetForceDirections(forceVector, out double forceRadial, out double forceNormal, out double forceTransverse);
 
                             string radialText = forceRadial >= 0d ? "Radial-Out Force:" : "Radial-In Force:";
                             LabelValueDouble(radialText, Math.Abs(forceRadial), "N");
@@ -875,7 +932,7 @@ namespace CelestialBodyMover
                     }
                 }
 
-                string displayName = mainBody.displayName.LocalizeRemoveGender();
+                string displayName = Util.GetBodyName(mainBody);
 
                 if (isFlight && showVesselInfo)
                 {
@@ -918,7 +975,7 @@ namespace CelestialBodyMover
 
                 if (showBodyOrbitInfo)
                 {
-                    string refBodyDisplayName = orbit.referenceBody.displayName.LocalizeRemoveGender();
+                    string refBodyDisplayName = Util.GetBodyName(orbit.referenceBody);
                     DrawLine();
 
                     double velocity = bodyVelocity.magnitude;
@@ -930,23 +987,23 @@ namespace CelestialBodyMover
                     LabelValueDouble("Eccentricity:", orbit.eccentricity, "");
                     LabelValueTime("Period:", orbit.period);
                     LabelValueDouble("Inclination:", orbit.inclination, "\u00B0", includeUnitSpace: false);
-                    LabelValueDouble("LAN:", orbit.LAN, "\u00B0", includeUnitSpace: false);
-                    LabelValueDouble("AoP:", orbit.argumentOfPeriapsis, "\u00B0", includeUnitSpace: false);
+                    LabelValueDouble("LAN:", orbit.LAN, "\u00B0", "Longitude of the Ascending Node", includeUnitSpace: false);
+                    LabelValueDouble("AoP:", orbit.argumentOfPeriapsis, "\u00B0", "Argument of Periapsis", includeUnitSpace: false);
                     LabelValueDouble("Mean Anomaly:", orbit.meanAnomaly * radToDeg, "\u00B0", includeUnitSpace: false);
                     LabelValue("Reference Body:", $"{refBodyDisplayName}");
                     if (double.IsInfinity(orbit.referenceBody.sphereOfInfluence))
                     {
-                        LabelValue("Reference Body SoI:", "Infinity");
+                        LabelValue("Reference Body SoI:", "Infinity", $"The Sphere of Influence of {refBodyDisplayName}");
                     }
                     else
                     {
-                        LabelValueDouble("Reference Body SoI:", orbit.referenceBody.sphereOfInfluence, "m");
+                        LabelValueDouble("Reference Body SoI:", orbit.referenceBody.sphereOfInfluence, "m", $"The Sphere of Influence of {refBodyDisplayName}");
                     }
                 }
             }
             else if (mainBody != null && mainBody.isStar)
             {
-                GUILayout.Label($"Current body ({mainBody.displayName.LocalizeRemoveGender()}) is a star, cannot use Celestial Body Mover");
+                GUILayout.Label($"Current body ({Util.GetBodyName(mainBody)}) is a star, cannot use Celestial Body Mover");
             }
 
             if (debugMode)
@@ -959,7 +1016,9 @@ namespace CelestialBodyMover
                     {
                         Orbit testOrbit = testBody.orbit;
                         double ecc = 1.5;
-                        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, testOrbit.epoch, jool);
+                        testBody.referenceBody.orbitingBodies.Remove(testBody);
+                        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), jool);
+                        testBody.referenceBody.orbitingBodies.Add(testBody);
                     }
                 }
 
@@ -971,7 +1030,9 @@ namespace CelestialBodyMover
                     {
                         Orbit testOrbit = testBody.orbit;
                         double ecc = 1.5;
-                        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, testOrbit.epoch, Bop);
+                        testBody.referenceBody.orbitingBodies.Remove(testBody);
+                        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), Bop);
+                        testBody.referenceBody.orbitingBodies.Add(testBody);
                     }
                 }
 
@@ -989,7 +1050,6 @@ namespace CelestialBodyMover
                 //    }
                 //}
 
-                //// prograde/retrograde and radial-in/out dont work. TODO fix
                 //if (GUILayout.Button("PROGRADE VECTOR"))
                 //{
                 //    SetLatLong(progradeVector);
@@ -1023,7 +1083,7 @@ namespace CelestialBodyMover
 
             Tooltip.Instance?.RecordTooltip(id);
             GUI.DragWindow();
-            ResetMainWindow(ref needWindowChange);
+            ResetMainWindow();
         }
 
         private void MakeSettingsWindow(int id)
@@ -1052,7 +1112,7 @@ namespace CelestialBodyMover
             string killThrottleText = killThrottleOnUnfreeze ? "Disable Kill Throttle" : "Enable Kill Throttle";
             BoolButton(ref killThrottleOnUnfreeze, killThrottleText, "Set throttle to 0 when unfreezing the craft, to prevent RUDs");
 
-            string homeBody = FlightGlobals.GetHomeBody().displayName.LocalizeRemoveGender();
+            string homeBody = Util.GetBodyName(FlightGlobals.GetHomeBody());
             string formatTimeText = formatTime ? "Disable Time Formatting" : "Enable Time Formatting";
             BoolButton(ref formatTime, formatTimeText, $"Toggle between displaying time in only seconds or in {homeBody} years, {homeBody} solar days, hours, minutes, and seconds");
 
@@ -1064,6 +1124,19 @@ namespace CelestialBodyMover
                 vessel.VesselDeltaV.SetCalcsDirty(true, true);
             }
             GUI.enabled = true;
+
+            GUILayout.BeginHorizontal();
+            string toggleAllSOIText = toggleAllSOIChanges ? "Disable All SOI Changes" : "Enable All SOI Changes";
+            string toggleAllSOITooltip = "Whether or not bodies can move between Spheres of Influence. Open the settings on the right to configure this per body.";
+            if (BoolButton(ref toggleAllSOIChanges, toggleAllSOIText, toggleAllSOITooltip, GUILayout.Width(270f))) // 300f - 30f
+            {
+                for (int i = 0; i < FlightGlobals.Bodies.Count; i++)
+                {
+                    bodySOIDictionary[FlightGlobals.Bodies[i]] = toggleAllSOIChanges;
+                }
+            }
+            ShowSettingsButton(ref showBodySOIWindow, "Select Individual Bodies");
+            GUILayout.EndHorizontal();
 
             string showVesselText = showVesselInfo ? "Hide Vessel Info" : "Show Vessel Info";
             string showVesselTooltip = isFlight ? "" : "\nThis button is currently disabled, as you are not in flight";
@@ -1077,23 +1150,82 @@ namespace CelestialBodyMover
             string showBodyOrbitText = showBodyOrbitInfo ? "Hide Body Orbit Info" : "Show Body Orbit Info";
             ResetWindowButton(ref showBodyOrbitInfo, showBodyOrbitText, "Toggle the display of body orbit information");
 
+            if (GUILayout.Button("Reset All Body Orbits"))
+            {
+                showOrbitResetWindow = true;
+            }
+
             string debugButtonText = debugMode ? "Disable Debug Mode" : "Enable Debug Mode"; // TODO take this out of the settings window before release
             ResetWindowButton(ref debugMode, debugButtonText);
-
-            if (GUILayout.Button("Reset All Orbits")) // TODO: add "are you sure" window and button
-            {
-                LoadOrbitDetails("originalOrbits");
-            }
 
             Tooltip.Instance?.RecordTooltip(id);
             GUI.DragWindow();
         }
 
-        private void ShowSettingsButton()
+        private void MakeBodySOIWindow(int id)
+        {
+            bodySOIRectScroll = GUILayout.BeginScrollView(bodySOIRectScroll, GUILayout.Height(500));
+
+            CelestialBody star = FlightGlobals.Bodies[0];
+
+            ShowBodies(star, -1); // TODO: a large system would make this laggy. make it persistent unless an soi changes somehow?
+
+            GUILayout.EndScrollView();
+            Tooltip.Instance?.RecordTooltip(id);
+            GUI.DragWindow();
+        }
+
+        private void ShowBodies(CelestialBody body, int depth)
+        {
+            if (!body.isStar)
+            {
+                if (bodySOIDictionary.TryGetValue(body, out bool CanChangeSOI))
+                {
+                    string bodyName = Util.GetBodyName(body);
+                    string bodyText = CanChangeSOI ? $"Prevent {bodyName} from Changing SoI" : $"Allow {bodyName} to Change SoI";
+                    string bodyTextTooltip = $"Whether or not {bodyName} can move between Spheres of Influence";
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space((depth * 20f) - 5f);
+                    BoolButton(ref CanChangeSOI, bodyText, bodyTextTooltip);
+                    GUILayout.EndHorizontal();
+
+                    if (CanChangeSOI != bodySOIDictionary[body])
+                    {
+                        bodySOIDictionary[body] = CanChangeSOI;
+                    }
+                }
+            }
+
+            for (int i = 0; i < body.orbitingBodies.Count; i++)
+            {
+                ShowBodies(body.orbitingBodies[i], depth + 1);
+            }
+        }
+
+        private void MakeOrbitResetWindow(int id)
+        {
+            GUILayout.Label(new GUIContent("Are you sure you want to reset all body orbits to their original parameters?", "The bodies will be set to their original orbits, and then the bodies will be moved along their orbits to get to the current time"));
+            
+            if (GUILayout.Button("Yes"))
+            {
+                LoadOrbitDetails("originalOrbits");
+                showOrbitResetWindow = false;
+            }
+            if (GUILayout.Button("No"))
+            {
+                showOrbitResetWindow = false;
+            }
+            
+            Tooltip.Instance?.RecordTooltip(id);
+            GUI.DragWindow();
+        }
+
+        private void ShowSettingsButton(ref bool showWindow, string toolTip)
         {
             if (settingsGear != null)
             {
-                BoolButton(ref showSettingsWindow, new GUIContent(settingsGear, "Show Settings"), GUI.skin.button);
+                BoolButton(ref showWindow, new GUIContent(settingsGear, toolTip), GUI.skin.button);
             }
             else
             {
@@ -1105,7 +1237,7 @@ namespace CelestialBodyMover
         {
             if (BoolButton(ref value, label, tooltip, options))
             {
-                needWindowChange = true;
+                needMainWindowChange = true;
                 return true;
             }
             else return false;
@@ -1266,7 +1398,7 @@ namespace CelestialBodyMover
             return orbit.Prograde(currentUT);
         }
 
-        private void GetForceDirections(Vector3d forceVector, CelestialBody body, out double forceRadial, out double forceNormal, out double forceTransverse)
+        private void GetForceDirections(Vector3d forceVector, out double forceRadial, out double forceNormal, out double forceTransverse)
         {
             Vector3d radial = GetRadialVector();
             Vector3d normal = GetNormalVector();
@@ -1278,7 +1410,7 @@ namespace CelestialBodyMover
         }
 
         private void MakeVesselStationary()
-        { // note: if the spin of the planet is increased measurably, the orbit velocity will increase even if the surface velocity stays at 0, so the vessel can get flung off. this is expected
+        { // note: if the spin of the planet is increased measurably, the orbit velocity will increase even if the surface velocity stays at 0, so the vessel can get flung off quite quickly when this is no longer running. this is expected
             Vessel vessel = FlightGlobals.ActiveVessel;
 
             vessel.SetWorldVelocity(Vector3d.zero);
@@ -1451,8 +1583,8 @@ namespace CelestialBodyMover
             if (Vector3d.Dot(originalAngularVelocity, newAngularVelocity) < 0d)
             {
                 body.rotationPeriod = -body.rotationPeriod;
-                Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Rotation Period: {initialPeriod:G5}, New Rotation Period: {body.rotationPeriod:G5}.");
-                //Util.Log($"Reversed the rotation direction of {body.displayName.LocalizeRemoveGender()}! Original Angular Velocity: {originalAngularVelocity}, New Angular Velocity: {newAngularVelocity}, Original Rotation Period: {initialPeriod}, New Rotation Period: {body.rotationPeriod}.");
+                Util.Log($"Reversed the rotation direction of {Util.GetBodyName(body)}! Original Rotation Period: {initialPeriod:G5}, New Rotation Period: {body.rotationPeriod:G5}.");
+                //Util.Log($"Reversed the rotation direction of {Util.GetBodyName(body)}! Original Angular Velocity: {originalAngularVelocity}, New Angular Velocity: {newAngularVelocity}, Original Rotation Period: {initialPeriod}, New Rotation Period: {body.rotationPeriod}.");
             }
             body.initialRotation = (body.rotationAngle - 360d * (1d / newPeriod) * currentUT) % 360d; // work backwards from rotationAngle = (initialRotation + 360.0 * rotPeriodRecip * Planetarium.GetUniversalTime()) % 360.0;
             // rotationAngle is left unchanged
@@ -1548,7 +1680,7 @@ namespace CelestialBodyMover
             Vector3d newBodyVelocity = bodyVelocity + deltaV;
 
             SetPositionVelocity(position, newBodyVelocity, ref orbit, currentUT);
-            string displayName = body.displayName.LocalizeRemoveGender();
+            string displayName = Util.GetBodyName(body);
 
             if (mainBody.rotates)
             {

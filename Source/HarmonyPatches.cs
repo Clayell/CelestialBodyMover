@@ -1,5 +1,7 @@
 ﻿using HarmonyLib;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
@@ -75,22 +77,49 @@ namespace CelestialBodyMover
                 return false;
             }
             __instance.lastMode = __instance.updateMode;
-            //Util.Log($"UpdateOrbit: going into switch, case: {__instance.updateMode}, instance: {__instance.name}");
+            bool CanChangeSOI = __instance.vessel == null && __instance.celestialBody != null && CelestialBodyMover.Instance?.bodySOIDictionary != null && CelestialBodyMover.Instance.bodySOIDictionary.TryGetValue(__instance.celestialBody, out bool b) && b;
+            //Util.Log($"UpdateOrbit: going into switch, case: {__instance.updateMode}, instance: {__instance.name}, CanChangeSOI: {CanChangeSOI}, __instance.celestialBody != null: {__instance.celestialBody != null}, CelestialBodyMover.Instance?.bodySOIDictionary != null: {CelestialBodyMover.Instance?.bodySOIDictionary != null}");
+            //if (__instance.celestialBody != null && CelestialBodyMover.Instance?.bodySOIDictionary != null)
+            //{
+            //    Util.Log($"CelestialBodyMover.Instance.bodySOIDictionary.TryGetValue(__instance.celestialBody, out bool _): {CelestialBodyMover.Instance.bodySOIDictionary.TryGetValue(__instance.celestialBody, out bool _)}");
+                
+            //    if (CelestialBodyMover.Instance.bodySOIDictionary.TryGetValue(__instance.celestialBody, out bool b1))
+            //    {
+            //        Util.Log($"b1: {b1}");
+            //    }
+            //}
             switch (__instance.updateMode)
             {
                 case OrbitDriver.UpdateMode.UPDATE:
                     __instance.updateFromParameters();
-                    __instance.CheckDominantBody(__instance.referenceBody.position + __instance.pos);
+                    if (__instance.vessel != null || CanChangeSOI)
+                    {
+                        __instance.CheckDominantBody(__instance.referenceBody.position + __instance.pos);
+                    }
                     break;
                 case OrbitDriver.UpdateMode.TRACK_Phys:
                 case OrbitDriver.UpdateMode.IDLE:
-                    if (!offset)
+                    if (__instance.vessel?.rootPart?.rb != null)
                     {
-                        fdtLastField.SetValue(__instance, -0d);
+                        if (!offset)
+                        {
+                            fdtLastField.SetValue(__instance, -0d);
+                        }
+                        if (!__instance.CheckDominantBody(__instance.vessel.CoMD))
+                        {
+                            __instance.TrackRigidbody(__instance.referenceBody, -fdtLast);
+                        }
                     }
-                    if (!__instance.CheckDominantBody(__instance.referenceBody.position + __instance.pos))
+                    else if (CanChangeSOI)
                     {
-                        __instance.TrackRigidbody(__instance.referenceBody, -fdtLast);
+                        if (!offset)
+                        {
+                            fdtLastField.SetValue(__instance, -0d);
+                        }
+                        if (!__instance.CheckDominantBody(__instance.referenceBody.position + __instance.pos))
+                        {
+                            __instance.TrackRigidbody(__instance.referenceBody, -fdtLast);
+                        }
                     }
                     break;
             }
@@ -98,7 +127,7 @@ namespace CelestialBodyMover
             if (isHyperbolic && __instance.orbit.eccentricity < 1d)
             {
                 isHyperbolicField.SetValue(__instance, false);
-                if (__instance.vessel != null)
+                if (__instance.vessel != null) // TODO, make this apply to celestial bodies too
                 {
                     GameEvents.onVesselOrbitClosed.Fire(__instance.vessel);
                 }
@@ -106,7 +135,7 @@ namespace CelestialBodyMover
             if (!isHyperbolic && __instance.orbit.eccentricity > 1d)
             {
                 isHyperbolicField.SetValue(__instance, true);
-                if (__instance.vessel != null)
+                if (__instance.vessel != null) // TODO, make this apply to celestial bodies too
                 {
                     GameEvents.onVesselOrbitEscaped.Fire(__instance.vessel);
                 }
@@ -124,7 +153,7 @@ namespace CelestialBodyMover
         [HarmonyPrefix]
         public static bool Prefix_CheckDominantBody(ref OrbitDriver __instance, ref bool __result, Vector3d refPos)
         {
-            Vector3d relPos = refPos - __instance.referenceBody.position;
+            //Vector3d relPos = refPos - __instance.referenceBody.position;
             if (__instance.celestialBody != null)
             {
                 if (__instance.celestialBody.isStar || !(bool)__instance.celestialBody.orbitDriver)
@@ -160,6 +189,29 @@ namespace CelestialBodyMover
 
             __result = false;
             return false;
+        }
+
+        [HarmonyPatch(nameof(OrbitDriver.OnRailsSOITransition))]
+        [HarmonyPrefix]
+        public static void Prefix_OnRailsSOITransition(ref OrbitDriver __instance, Orbit ownOrbit, CelestialBody to)
+        {
+            if (__instance.celestialBody != null)
+            {
+                Util.Log($"{Util.GetBodyName(__instance.celestialBody)} has exited the SoI of {Util.GetBodyName(__instance.referenceBody)} and entered the SoI of {Util.GetBodyName(to)}.");
+                if (__instance.referenceBody.orbitingBodies.Contains(__instance.celestialBody))
+                    __instance.referenceBody.orbitingBodies.Remove(__instance.celestialBody);
+            }
+        }
+
+        [HarmonyPatch(nameof(OrbitDriver.OnRailsSOITransition))]
+        [HarmonyPostfix]
+        public static void Postfix_OnRailsSOITransition(ref OrbitDriver __instance, Orbit ownOrbit, CelestialBody to)
+        {
+            if (__instance.celestialBody != null)
+            {
+                if (!to.orbitingBodies.Contains(__instance.celestialBody))
+                    to.orbitingBodies.Add(__instance.celestialBody);
+            }
         }
 
         private static bool InHillSphereAndSOI(CelestialBody child, CelestialBody newParent)
@@ -219,6 +271,34 @@ namespace CelestialBodyMover
                 }
             }
             return body;
+        }
+    }
+
+    [HarmonyPatch(typeof(Planetarium))]
+    public static class PlanetariumPatches
+    {
+        // the original UpdateCBsRecursive throws an ArgumentOutOfRangeException because our OnRailsSOITransition patch modifies the orbitingBodies while it is running
+
+        [HarmonyPatch("UpdateCBsRecursive")]
+        [HarmonyPrefix]
+        public static bool Prefix_UpdateCBsRecursive(ref Planetarium __instance, CelestialBody cb)
+        {
+            cb.CBUpdate();
+            List<CelestialBody> list = cb.orbitingBodies.ToList(); // use ToList to make it unchanging
+            for (int i = 0; i < list.Count; i++)
+            {
+                CelestialBody celestialBody = list[i];
+                if (!celestialBody.orbitDriver || !celestialBody.orbitDriver.reverse)
+                {
+                    Prefix_UpdateCBsRecursive(ref __instance, celestialBody);
+                }
+            }
+            if ((bool)cb.orbitDriver && cb.orbitDriver.reverse)
+            {
+                Prefix_UpdateCBsRecursive(ref __instance, cb.referenceBody);
+            }
+
+            return false;
         }
     }
 

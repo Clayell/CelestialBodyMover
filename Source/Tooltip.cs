@@ -71,7 +71,7 @@ namespace CelestialBodyMover
                 tooltipText = string.Empty;
             }
 
-            string newTooltipStr = overrideTooltip != null ? overrideTooltip : GUI.tooltip;
+            string newTooltipStr = overrideTooltip ?? GUI.tooltip;
             if (tooltipText != newTooltipStr)
             {
                 _isTooltipChanged = true;
