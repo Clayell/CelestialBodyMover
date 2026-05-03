@@ -1,10 +1,17 @@
 # put this in .git
 
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$ProjectName
+)
+
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
-$AssemblyPath = Join-Path $ProjectRoot "bin\Release\CelestialBodyMover.dll"
+$AssemblyPath = Join-Path $ProjectRoot "bin\Release\$ProjectName.dll"
 $SourceDir    = Join-Path $ProjectRoot "GameData"
 $OutputDir    = Join-Path $ProjectRoot "bin\Release\"
+
+Write-Host "Creating release zip..."
 
 if (-not (Test-Path $AssemblyPath)) {
     Write-Error "Assembly not found: $AssemblyPath"
@@ -23,7 +30,7 @@ if (-not $Version) {
     exit 1
 }
 
-$OutputZip = Join-Path $OutputDir "CelestialBodyMover-$Version.zip"
+$OutputZip = Join-Path $OutputDir "$ProjectName-$Version.zip"
 
 if (Test-Path $OutputZip) {
     Remove-Item $OutputZip

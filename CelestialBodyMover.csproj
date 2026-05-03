@@ -14,6 +14,17 @@
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
   </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>TRACE;DEBUG;ENABLE_PROFILER;</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
     <DebugType>none</DebugType>
     <Optimize>true</Optimize>
@@ -25,6 +36,7 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
   <!-- Make sure KSPRoot is set as a system variable when building this, it should link to the root folder of your KSP install -->
+  <!-- (you can delete the lines that involve KSPSTOCK, and all of the Exec Command targets) -->
   <ItemDefinitionGroup>
     <Reference>
       <Private>False</Private>
@@ -59,6 +71,8 @@
   <ItemGroup>
     <None Include="GameData\CelestialBodyMover\CelestialBodyMover.version" />
     <None Include="GameData\CelestialBodyMover\README.md" />
+    <None Include="git-scripts\DisableDebug.ps1" />
+    <None Include="git-scripts\EnableDebug.ps1" />
     <None Include="Properties\AssemblyVersion.tt">
       <Generator>TextTemplatingFileGenerator</Generator>
       <LastGenOutput>AssemblyVersion.cs</LastGenOutput>
@@ -66,6 +80,7 @@
     <None Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\button-24.png" />
     <None Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\button-64.png" />
     <None Include="README.md" />
+    <None Include="LICENSE.md" />
     <None Include="git-scripts\zip.ps1" />
   </ItemGroup>
   <ItemGroup>
@@ -76,24 +91,40 @@
     <Content Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\CelestialBodyMover-24.png" />
     <Content Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\CelestialBodyMover-64.png" />
     <Content Include="GameData\CelestialBodyMover\Plugins\CelestialBodyMover.dll" />
-    <None Include="LICENSE.md" />
   </ItemGroup>
-  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <PostBuildEvent>
-			xcopy /y /i "$(TargetPath)" "$(SolutionDir)\GameData\CelestialBodyMover\Plugins\"
+			    xcopy /y /i "$(TargetPath)" "$(SolutionDir)\GameData\CelestialBodyMover\Plugins\"
+			    xcopy /y /i "$(TargetDir)$(TargetName).pdb" "$(SolutionDir)\GameData\CelestialBodyMover\Plugins\"
 
-			xcopy /y /i "$(TargetPath)" "$(KSPRoot)\GameData\CelestialBodyMover\Plugins\"
+			    xcopy /y /i "$(TargetPath)" "$(KSPRoot)\GameData\CelestialBodyMover\Plugins\"
+			    xcopy /y /i "$(TargetDir)$(TargetName).pdb" "$(KSPRoot)\GameData\CelestialBodyMover\Plugins\"
 			
-			xcopy /y /i "$(TargetPath)" "$(KSPSTOCK)\GameData\CelestialBodyMover\Plugins\"
-    </PostBuildEvent>
+			    xcopy /y /i "$(TargetPath)" "$(KSPSTOCK)\GameData\CelestialBodyMover\Plugins\"
+			    xcopy /y /i "$(TargetDir)$(TargetName).pdb" "$(KSPSTOCK)\GameData\CelestialBodyMover\Plugins\"
+        </PostBuildEvent>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <PostBuildEvent>
+			    xcopy /y /i "$(TargetPath)" "$(SolutionDir)\GameData\CelestialBodyMover\Plugins\"
+
+			    xcopy /y /i "$(TargetPath)" "$(KSPRoot)\GameData\CelestialBodyMover\Plugins\"
+			
+			    xcopy /y /i "$(TargetPath)" "$(KSPSTOCK)\GameData\CelestialBodyMover\Plugins\"
+        </PostBuildEvent>
   </PropertyGroup>
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
     <Exec Command="&quot;$(ProgramFiles)\Microsoft Visual Studio\2022\Community\Common7\IDE\TextTransform.exe&quot; &quot;$(ProjectDir)Properties\AssemblyVersion.tt&quot;" />
   </Target>
-  <Target Name="ZipGameData" AfterTargets="Build">
-    <Exec Command="powershell -ExecutionPolicy Bypass -File .git\zip.ps1" WorkingDirectory="$(ProjectDir)" />
+  <Target Name="ZipGameData" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;.git\zip.ps1&quot; -ProjectName &quot;$(MSBuildProjectName)&quot;" WorkingDirectory="$(ProjectDir)" />
+  </Target>
+  <Target Name="DisableDebug" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;.git\DisableDebug.ps1&quot; -targetDir &quot;$(KSPSTOCK)&quot; -sourceDir &quot;C:\Users\Clayel\KSP Instances\Kerbal Space Program 1\Unity Profiler DLLs\Original DLL&quot;" WorkingDirectory="$(ProjectDir)" />
+  </Target>
+  <Target Name="EnableDebug" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;.git\EnableDebug.ps1&quot; -targetDir &quot;$(KSPSTOCK)&quot; -sourceDir &quot;C:\Users\Clayel\KSP Instances\Kerbal Space Program 1\Unity Profiler DLLs&quot;" WorkingDirectory="$(ProjectDir)" />
   </Target>
   <Target Name="CheckKSPStatus" BeforeTargets="CoreCompile">
     <Message Importance="High" Text="Checking if KSP is running..." />
@@ -102,11 +133,4 @@
     </Exec>
     <Error Condition="$(KSPProcessList.Contains('KSP_x64.exe'))" Text="Build failed: KSP_x64.exe is running. Please close KSP before building." />
   </Target>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
 </Project>

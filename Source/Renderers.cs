@@ -225,7 +225,7 @@ namespace CelestialBodyMover
             if (BodyOrigin == null || PointDirection == null || !Util.MapViewEnabled() || _currentDrawingState != DrawingState.DrawingFullPicture)
             { return; }
 
-            Vector3 center = BodyOrigin.transform.position;
+            Vector3 center = BodyOrigin.position;
             Vector3 dir = PlanetariumCamera.Camera.WorldToScreenPoint(ScaledSpace.LocalToScaledSpace(center + lineLength * 1.05f * PointDirection().normalized));
 
             bool cameraNear = PlanetariumCamera.fetch.Distance < Math.Max(lineLength / 100f, PlanetariumCamera.fetch.minDistance);

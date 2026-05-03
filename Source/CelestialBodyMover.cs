@@ -98,22 +98,16 @@ namespace CelestialBodyMover
         GUIStyle lineStyle;
         Texture2D settingsGear;
 
-        [KSPField(isPersistant = true)]
-        bool showMainWindow = false;
-        [KSPField(isPersistant = true)]
-        bool showSettingsWindow = false;
+        [KSPField(isPersistant = true)] bool showMainWindow = false;
+        [KSPField(isPersistant = true)] bool showSettingsWindow = false;
         bool isKSPGUIActive = true; // for some reason, this initially only turns to true when you turn off and on the KSP GUI
         bool isLoading = false;
         bool isBadUI = false;
 
-        //bool? firstLoad = null;
-        [KSPField(isPersistant = true)]
-        bool firstLoad = true;
+        [KSPField(isPersistant = true)] bool firstLoad = true;
 
-        [KSPField(isPersistant = true)]
-        internal bool isActive = false;
-        [KSPField(isPersistant = true)]
-        internal bool isFrozen = false;
+        [KSPField(isPersistant = true)] internal bool isActive = false;
+        [KSPField(isPersistant = true)] internal bool isFrozen = false;
 
         Vector3d radiusVec => mainBody != null && FlightGlobals.ActiveVessel != null ? mainBody.position - FlightGlobals.ActiveVessel.GetWorldPos3D() : Vector3d.zero; // vector from vessel to body
         Vector3d bodyAccel;
@@ -144,8 +138,7 @@ namespace CelestialBodyMover
         Guid vesselID;
         Coroutine impactCoroutine;
         Vector2 popupAnchor = new Vector2(0.5f, 0.5f);
-        [KSPField(isPersistant = true)]
-        float minImpactSpeed = 50f;
+        [KSPField(isPersistant = true)] float minImpactSpeed = 50f;
 
         CelestialBody _mainBody;
         CelestialBody mainBody
@@ -167,31 +160,20 @@ namespace CelestialBodyMover
 
         Rect mainRect = new Rect(0, 0, -1, -1);
         Rect settingsRect = new Rect(0, 0, -1, -1);
-        [KSPField(isPersistant = true)]
-        Vector2 mainRectPos = new Vector2(100, 100);
-        [KSPField(isPersistant = true)]
-        Vector2 settingsRectPos = new Vector2(200, 200);
+        [KSPField(isPersistant = true)] Vector2 mainRectPos = new Vector2(100, 100);
+        [KSPField(isPersistant = true)] Vector2 settingsRectPos = new Vector2(200, 200);
         bool needWindowChange = false;
 
-        [KSPField(isPersistant = true)]
-        bool showVesselInfo = true;
-        [KSPField(isPersistant = true)]
-        bool showBodyInfo = true;
-        [KSPField(isPersistant = true)]
-        bool showBodyOrbitInfo = true;
+        [KSPField(isPersistant = true)] bool showVesselInfo = true;
+        [KSPField(isPersistant = true)] bool showBodyInfo = true;
+        [KSPField(isPersistant = true)] bool showBodyOrbitInfo = true;
 
-        [KSPField(isPersistant = true)]
-        float maxSurfaceHeight = 20f;
-        [KSPField(isPersistant = true)]
-        internal float lineLengthExponent = 5f;
-        [KSPField(isPersistant = true)]
-        bool killThrottleOnUnfreeze = true;
-        [KSPField(isPersistant = true)]
-        bool formatTime = true;
-        [KSPField(isPersistant = true)]
-        internal bool includeBodyMass = false;
-        [KSPField(isPersistant = true)]
-        bool debugMode = false; // TODO add menu to modify orbit manually if debugMode is on
+        [KSPField(isPersistant = true)] float maxSurfaceHeight = 20f;
+        [KSPField(isPersistant = true)] internal float lineLengthExponent = 5f;
+        [KSPField(isPersistant = true)] bool killThrottleOnUnfreeze = true;
+        [KSPField(isPersistant = true)] bool formatTime = true;
+        [KSPField(isPersistant = true)] internal bool includeBodyMass = false;
+        [KSPField(isPersistant = true)] bool debugMode = false; // TODO add menu to modify orbit manually if debugMode is on
 
         // TODO: add retrograde, radial-in, and anti-normal lines too?
         MapLineRenderer radialLineRenderer;
@@ -207,7 +189,6 @@ namespace CelestialBodyMover
             get => _forceVector;
             set
             {
-                //Util.Log($"forceLineRenderer.PointDirection: {forceLineRenderer?.PointDirection}, value: {value.normalized}, AngleBetween: {angle}, bool: {(!value.IsZero() && forceLineRenderer != null && angle > 1d)}, bool1: {!value.IsZero()}, bool2: {forceLineRenderer != null}, bool3: {angle > 1d}");
                 if (_forceVector.IsZero() != value.IsZero())
                 {
                     needWindowChange = true;
@@ -217,8 +198,7 @@ namespace CelestialBodyMover
             }
         }
         bool needForceLineReset = false;
-        [KSPField(isPersistant = true)]
-        bool displayLines = true;
+        [KSPField(isPersistant = true)] bool displayLines = true;
 
         static string PluginDataFolder;
 
@@ -775,7 +755,7 @@ namespace CelestialBodyMover
         }
 
         private void MakeMainWindow(int id)
-        {
+        { // displayFormat follows https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-numeric-format-strings
             if (HighLogic.LoadedScene != GameScenes.FLIGHT && HighLogic.LoadedScene != GameScenes.TRACKSTATION && HighLogic.LoadedScene != GameScenes.SPACECENTER)
             {
                 return;
@@ -954,6 +934,14 @@ namespace CelestialBodyMover
                     LabelValueDouble("AoP:", orbit.argumentOfPeriapsis, "\u00B0", includeUnitSpace: false);
                     LabelValueDouble("Mean Anomaly:", orbit.meanAnomaly * radToDeg, "\u00B0", includeUnitSpace: false);
                     LabelValue("Reference Body:", $"{refBodyDisplayName}");
+                    if (double.IsInfinity(orbit.referenceBody.sphereOfInfluence))
+                    {
+                        LabelValue("Reference Body SoI:", "Infinity");
+                    }
+                    else
+                    {
+                        LabelValueDouble("Reference Body SoI:", orbit.referenceBody.sphereOfInfluence, "m");
+                    }
                 }
             }
             else if (mainBody != null && mainBody.isStar)
@@ -963,37 +951,29 @@ namespace CelestialBodyMover
 
             if (debugMode)
             {
-                //if (GUILayout.Button("TESTORBIT"))
-                //{
-                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                //    if (testBody != null)
-                //    {
-                //        Orbit testOrbit = testBody.orbit;
-                //        double ecc = .99;
-                //        testOrbit.SetOrbit(testOrbit.inclination, ecc, testOrbit.PeR / (1 - ecc), testOrbit.LAN, testOrbit.argumentOfPeriapsis, 0d, testOrbit.epoch, testOrbit.referenceBody);
-                //    }
-                //}
+                if (GUILayout.Button("TESTORBIT"))
+                {
+                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    CelestialBody jool = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Jool");
+                    if (testBody != null)
+                    {
+                        Orbit testOrbit = testBody.orbit;
+                        double ecc = 1.5;
+                        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, testOrbit.epoch, jool);
+                    }
+                }
 
-                //if (GUILayout.Button("TESTORBIT2"))
-                //{
-                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                //    if (testBody != null)
-                //    {
-                //        Orbit testOrbit = testBody.orbit;
-                //        double ecc = 1.5;
-                //        testOrbit.SetOrbit(testOrbit.inclination, ecc, testOrbit.PeR / (1 - ecc), testOrbit.LAN, testOrbit.argumentOfPeriapsis, 0d, testOrbit.epoch, testOrbit.referenceBody);
-                //    }
-                //}
-
-                //if (GUILayout.Button("TESTROTATION"))
-                //{
-                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                //    if (testBody != null)
-                //    {
-                //        testBody.rotationPeriod = 12345d;
-                //        testBody.initialRotation = (testBody.rotationAngle - 360d * (1d / testBody.rotationPeriod) * Planetarium.GetUniversalTime()) % 360d;
-                //    }
-                //}
+                if (GUILayout.Button("TESTORBIT2"))
+                {
+                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    CelestialBody Bop = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Bop");
+                    if (testBody != null)
+                    {
+                        Orbit testOrbit = testBody.orbit;
+                        double ecc = 1.5;
+                        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, testOrbit.epoch, Bop);
+                    }
+                }
 
                 //void SetLatLong(Vector3d vector)
                 //{
@@ -1008,7 +988,7 @@ namespace CelestialBodyMover
                 //        FlightGlobals.fetch.SetVesselPosition(mainBody.flightGlobalsIndex, latitude, longitude, altitude, -90d, 90d, true, true);
                 //    }
                 //}
-                 
+
                 //// prograde/retrograde and radial-in/out dont work. TODO fix
                 //if (GUILayout.Button("PROGRADE VECTOR"))
                 //{
@@ -1057,7 +1037,7 @@ namespace CelestialBodyMover
             LabelValueDouble("Line Length Exponent:", lineLengthExponent, "", "The exponent that determines how long the displayed lines will be");
             lineLengthExponent = Mathf.Round(GUILayout.HorizontalSlider(lineLengthExponent, 0f, 10f));
 
-            LabelValueDouble("Minimum Impact Speed:", minImpactSpeed, "m/s", "If KSP does not recognize an impact, this is the minimum speed at which an impact will always be counted");
+            LabelValueDouble("Minimum Impact Speed:", minImpactSpeed, "m/s", "If KSP does not detect an impact, this is the minimum vertical speed at which an impact will always be counted");
             minImpactSpeed = Mathf.Round(GUILayout.HorizontalSlider(minImpactSpeed, 0f, 100f));
 
             GUILayout.Space(10);
@@ -1205,6 +1185,9 @@ namespace CelestialBodyMover
         private string FormatTime(double t)
         {
             CelestialBody homeBody = FlightGlobals.GetHomeBody();
+
+            if (double.IsNaN(t)) return "NaN";
+            if (double.IsInfinity(t)) return "Infinity";
 
             int tSign = Math.Sign(t);
             t = Math.Abs(t);
