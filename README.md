@@ -3,7 +3,7 @@
 [![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/Clayell/CelestialBodyMover/latest/total?label=downloads%20(latest))](https://github.com/Clayell/CelestialBodyMover/releases/latest)
 [![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/Clayell/CelestialBodyMover/total?label=downloads%20(total))](https://github.com/Clayell/CelestialBodyMover/releases)
 
-# CelestialBodyMover (CBM)
+# Celestial Body Mover (CBM)
 
 ###### Put your hands on the rails of the body orbits and push them aside. - [steamroller](https://discord.com/channels/601452466017665040/601458726192414741/1493350537108787201)
 
@@ -13,7 +13,7 @@ CelestialBodyMover (CBM) lets you move and change the spin* of any* body in KSP 
 * Aiming down at the body with a rocket engine
 	* CBM allows you to keep your vessel stationary while above the surface of the body, and allows you to include the body's mass in your Delta-V calculations
 * Using your vessel's gravity to pull the body in your direction
-	* This does not change the spin of the body, tidal effects are not modelled
+	* This does not change the spin of the body, as tidal effects are not modelled
 * Smashing into the body via an inelastic collision
 
 ###### *The body's rotational axis is fixed due to KSP constraints, but the rotation along this axis can be fully changed and even reversed.
@@ -44,6 +44,9 @@ Source Code: https://github.com/Clayell/CelestialBodyMover/tree/master/Source
 
 ### Author: [Clayel](https://github.com/Clayell)
 
-### Special Thanks To
+### Special Thanks To:
 * [Nazfib](https://github.com/Nazfib) (Orbit/Angle Renderer from [TWP2](https://github.com/Nazfib/TransferWindowPlanner2))
 * [siimav](https://github.com/siimav) ([Tooltips from RP-1](https://github.com/KSP-RO/RP-1/blob/master/Source/RP0/UI/Tooltip.cs))
+
+### License:
+This mod is subject to the MIT license. (see [LICENSE.md](https://github.com/Clayell/CelestialBodyMover/blob/master/LICENSE.md))
