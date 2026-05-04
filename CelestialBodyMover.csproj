@@ -96,7 +96,6 @@
     <Content Include="GameData\CelestialBodyMover\PluginData\ToolbarIcons\CelestialBodyMover-64.png" />
     <Content Include="GameData\CelestialBodyMover\Plugins\CelestialBodyMover.dll" />
   </ItemGroup>
-  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <PostBuildEvent>

@@ -478,6 +478,7 @@ namespace CelestialBodyMover
             return LoadOrbitDetails(root, saveNode);
         }
 
+        // TODO: KSP doesnt reload orbits when switching between saves, could lead to one save getting affected by another
         private bool LoadOrbitDetails(ConfigNode root, string saveNode)
         {
             Util.Log($"Loading orbits from {saveNode}...");
@@ -1633,7 +1634,7 @@ namespace CelestialBodyMover
 
             //Util.Log($"NEW position: {orbit.getRelativePositionAtUT(currentUT)}, NEW velocity: {orbit.getOrbitalVelocityAtUT(currentUT)}, meanAnomaly: {orbit.meanAnomaly}, argumentOfPeriapsis: {orbit.argumentOfPeriapsis}");
 
-            if (mainBody.rotates) return; // what even uses this? maybe for like stars or something
+            if (!mainBody.rotates) return; // what even uses this? maybe for like stars or something
 
             if (alignmentToCenter <= 1d - tolerance) // if not pointing towards center
             {
