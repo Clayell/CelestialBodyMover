@@ -69,9 +69,9 @@
     <Compile Include="Source\Tooltip.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="CBMExampleConfigs\poodlePatch.cfg" />
-    <None Include="CBMExampleConfigs\README.md" />
-    <None Include="CBMExampleConfigs\scyllaPatch.cfg" />
+    <None Include="GameData\CBMExampleConfigs\poodlePatch.cfg" />
+    <None Include="GameData\CBMExampleConfigs\README.md" />
+    <None Include="GameData\CBMExampleConfigs\scyllaPatch.cfg" />
     <None Include="GameData\CelestialBodyMover\CelestialBodyMover.ckan" />
     <None Include="GameData\CelestialBodyMover\CelestialBodyMover.version" />
     <None Include="GameData\CelestialBodyMover\README.md" />
