@@ -1008,33 +1008,33 @@ namespace CelestialBodyMover
 
             if (debugMode)
             {
-                if (GUILayout.Button("TESTORBIT"))
-                {
-                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                    CelestialBody jool = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Jool");
-                    if (testBody != null)
-                    {
-                        Orbit testOrbit = testBody.orbit;
-                        double ecc = 1.5;
-                        testBody.referenceBody.orbitingBodies.Remove(testBody);
-                        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), jool);
-                        testBody.referenceBody.orbitingBodies.Add(testBody);
-                    }
-                }
+                //if (GUILayout.Button("TESTORBIT"))
+                //{
+                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                //    CelestialBody jool = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Jool");
+                //    if (testBody != null)
+                //    {
+                //        Orbit testOrbit = testBody.orbit;
+                //        double ecc = 1.5;
+                //        testBody.referenceBody.orbitingBodies.Remove(testBody);
+                //        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), jool);
+                //        testBody.referenceBody.orbitingBodies.Add(testBody);
+                //    }
+                //}
 
-                if (GUILayout.Button("TESTORBIT2"))
-                {
-                    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                    CelestialBody Bop = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Bop");
-                    if (testBody != null)
-                    {
-                        Orbit testOrbit = testBody.orbit;
-                        double ecc = 1.5;
-                        testBody.referenceBody.orbitingBodies.Remove(testBody);
-                        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), Bop);
-                        testBody.referenceBody.orbitingBodies.Add(testBody);
-                    }
-                }
+                //if (GUILayout.Button("TESTORBIT2"))
+                //{
+                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                //    CelestialBody Bop = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Bop");
+                //    if (testBody != null)
+                //    {
+                //        Orbit testOrbit = testBody.orbit;
+                //        double ecc = 1.5;
+                //        testBody.referenceBody.orbitingBodies.Remove(testBody);
+                //        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), Bop);
+                //        testBody.referenceBody.orbitingBodies.Add(testBody);
+                //    }
+                //}
 
                 //void SetLatLong(Vector3d vector)
                 //{
