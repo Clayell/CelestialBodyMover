@@ -69,11 +69,12 @@
     <Compile Include="Source\Tooltip.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="GameData\CelestialBodyMover\CelestialBodyMover.ckan" />
     <None Include="GameData\CelestialBodyMover\CelestialBodyMover.version" />
     <None Include="GameData\CelestialBodyMover\README.md" />
     <None Include="git-scripts\DisableDebug.ps1" />
     <None Include="git-scripts\EnableDebug.ps1" />
-	<None Include="git-scripts\zip.ps1" />
+    <None Include="git-scripts\zip.ps1" />
     <None Include="Properties\AssemblyVersion.tt">
       <Generator>TextTemplatingFileGenerator</Generator>
       <LastGenOutput>AssemblyVersion.cs</LastGenOutput>

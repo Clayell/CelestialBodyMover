@@ -1575,6 +1575,7 @@ namespace CelestialBodyMover
             }
         }
 
+        // TODO: technically, theres nothing that prevents the star's rotation from being changed. we should add this
         private void SetAngularVelocity(Vector3d originalAngularVelocity, Vector3d newAngularVelocity, ref CelestialBody body, double currentUT)
         {
             if (body.tidallyLocked) body.tidallyLocked = false;
