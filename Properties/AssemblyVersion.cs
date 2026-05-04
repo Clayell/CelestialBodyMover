@@ -11,3 +11,4 @@ using System.Reflection;
 [assembly: KSPAssembly("CelestialBodyMover", 1, 0, 0)]
 [assembly: KSPAssemblyDependency("ToolbarController", 1, 0)]
 [assembly: KSPAssemblyDependency("ClickThroughBlocker", 1, 0)]
+[assembly: KSPAssemblyDependency("HarmonyKSP", 1, 0)]
