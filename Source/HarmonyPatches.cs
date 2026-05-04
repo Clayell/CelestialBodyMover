@@ -25,7 +25,7 @@ namespace CelestialBodyMover
         [HarmonyPostfix]
         public static void Postfix_CalculateMassValues(ref DeltaVPartInfo __instance)
         {
-            if (!Util.ValidSituation() || !Util.IsFlight() || !Util.GetBodyOrbit(FlightGlobals.ActiveVessel?.mainBody, out _, false)) return;
+            if (!Util.CanChangeDeltaV() || !Util.IsFlight() || !Util.GetBodyOrbit(FlightGlobals.ActiveVessel?.mainBody, out _, false)) return;
 
             if (__instance.vesselDeltaV.Vessel.rootPart.persistentId != __instance.part.persistentId) return;
 

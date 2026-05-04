@@ -84,7 +84,7 @@ namespace CelestialBodyMover
             return body.displayName.LocalizeRemoveGender();
         }
 
-        internal static bool ValidSituation() => CelestialBodyMover.Instance != null && CelestialBodyMover.Instance.isActive && CelestialBodyMover.Instance.isFrozen && CelestialBodyMover.Instance.includeBodyMass;
+        internal static bool CanChangeDeltaV() => CelestialBodyMover.Instance != null && CelestialBodyMover.Instance.isActive && CelestialBodyMover.Instance.isFrozen && CelestialBodyMover.Instance.includeBodyMass;
     }
 
     [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
@@ -945,8 +945,8 @@ namespace CelestialBodyMover
                     double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
                     LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2");
                     double actualMass = GetVesselMass(vessel);
-                    double mass = actualMass + (Util.ValidSituation() ? mainBody.Mass : 0d);
-                    string massTooltip = Util.ValidSituation() ? $"Currently factoring in the mass of {displayName} for vessel mass, the actual vessel mass is {actualMass:G5} kg" : "";
+                    double mass = actualMass + (Util.CanChangeDeltaV() ? mainBody.Mass : 0d);
+                    string massTooltip = Util.CanChangeDeltaV() ? $"Currently factoring in the mass of {displayName} for vessel mass, the actual vessel mass is {actualMass:G5} kg" : "";
                     LabelValueDouble("Mass:", mass, "kg", massTooltip);
                     double deltaV = vessel.VesselDeltaV.GetSituationTotalDeltaV(DeltaVGlobals.DeltaVAppValues.situation);
                     LabelValueDouble("Delta V:", deltaV, "m/s");
@@ -1137,6 +1137,7 @@ namespace CelestialBodyMover
             string showBodyOrbitText = showBodyOrbitInfo ? "Hide Body Orbit Info" : "Show Body Orbit Info";
             ResetWindowButton(ref showBodyOrbitInfo, showBodyOrbitText, "Toggle the display of body orbit information");
 
+            // TODO: make this only active if CBM is active? unsure if this would be good or not
             GUILayout.BeginHorizontal();
             string toggleAllSOIText = toggleAllSOIChanges ? "Disable All SOI Changes" : "Enable All SOI Changes";
             string toggleAllSOITooltip = "Whether or not bodies can move between Spheres of Influence. Open the settings on the right to configure this per body.";
