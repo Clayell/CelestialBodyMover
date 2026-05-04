@@ -24,13 +24,15 @@ Celestial Body Mover also provides you with lines in the map view that display t
 
 ## Links
 
+Downloading through [CKAN](https://github.com/KSP-CKAN/CKAN) is highly recommended.
+
 Forum Thread: https://forum.kerbalspaceprogram.com/topic/230493-v1000-celestial-body-mover-cbm/
 
-SpaceDock:
+SpaceDock: https://spacedock.info/mod/4245/Celestial%20Body%20Mover%20(CBM)
 
 Source Code: https://github.com/Clayell/CelestialBodyMover/tree/master/Source
 
-## Mod Relationships (using [CKAN](https://github.com/KSP-CKAN/CKAN) is highly recommended)
+## Mod Relationships
 
 #### Required:
 * ToolbarController

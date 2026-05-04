@@ -8,7 +8,7 @@ resources:
   homepage: https://forum.kerbalspaceprogram.com/topic/230493-v1000-celestial-body-mover-cbm/
   repository: https://github.com/Clayell/CelestialBodyMover/
   bugtracker: https://github.com/Clayell/CelestialBodyMover/issues
-  spacedock: 
+  spacedock: https://spacedock.info/mod/4245/Celestial%20Body%20Mover%20(CBM)
 depends:
   - name: ClickThroughBlocker
   - name: Harmony2
