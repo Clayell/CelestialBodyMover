@@ -5,7 +5,7 @@ description: Provides a way for the player to move any celestial body through th
 comment: Indexed by author. Please report any problems at the repository bugtracker.
 $vref: '#/ckan/ksp-avc'
 resources:
-  homepage: 
+  homepage: https://forum.kerbalspaceprogram.com/topic/230493-v1000-celestial-body-mover-cbm/
   repository: https://github.com/Clayell/CelestialBodyMover/
   bugtracker: https://github.com/Clayell/CelestialBodyMover/issues
   spacedock: 

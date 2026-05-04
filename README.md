@@ -24,7 +24,7 @@ Celestial Body Mover also provides you with lines in the map view that display t
 
 ## Links
 
-Forum Thread: 
+Forum Thread: https://forum.kerbalspaceprogram.com/topic/230493-v1000-celestial-body-mover-cbm/
 
 SpaceDock:
 
