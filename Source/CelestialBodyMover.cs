@@ -153,7 +153,7 @@ namespace CelestialBodyMover
         double bodyAngularAccel;
 
         bool impactDetected;
-        Vector3d vesselVelocity;
+        Vector3d surfaceVelocity;
         double vesselVerticalSpeed;
         Guid vesselID;
         Coroutine impactCoroutine;
@@ -1125,6 +1125,18 @@ namespace CelestialBodyMover
             }
             GUI.enabled = true;
 
+            string showVesselText = showVesselInfo ? "Hide Vessel Info" : "Show Vessel Info";
+            string showVesselTooltip = isFlight ? "" : "\nThis button is currently disabled, as you are not in flight";
+            GUI.enabled = isFlight;
+            ResetWindowButton(ref showVesselInfo, showVesselText, "Toggle the display of vessel information" + showVesselTooltip);
+            GUI.enabled = true;
+
+            string showBodyText = showBodyInfo ? "Hide Body Info" : "Show Body Info";
+            ResetWindowButton(ref showBodyInfo, showBodyText, "Toggle the display of body information");
+
+            string showBodyOrbitText = showBodyOrbitInfo ? "Hide Body Orbit Info" : "Show Body Orbit Info";
+            ResetWindowButton(ref showBodyOrbitInfo, showBodyOrbitText, "Toggle the display of body orbit information");
+
             GUILayout.BeginHorizontal();
             string toggleAllSOIText = toggleAllSOIChanges ? "Disable All SOI Changes" : "Enable All SOI Changes";
             string toggleAllSOITooltip = "Whether or not bodies can move between Spheres of Influence. Open the settings on the right to configure this per body.";
@@ -1138,25 +1150,15 @@ namespace CelestialBodyMover
             ShowSettingsButton(ref showBodySOIWindow, "Select Individual Bodies");
             GUILayout.EndHorizontal();
 
-            string showVesselText = showVesselInfo ? "Hide Vessel Info" : "Show Vessel Info";
-            string showVesselTooltip = isFlight ? "" : "\nThis button is currently disabled, as you are not in flight";
-            GUI.enabled = isFlight;
-            ResetWindowButton(ref showVesselInfo, showVesselText, "Toggle the display of vessel information" + showVesselTooltip);
-            GUI.enabled = true;
-
-            string showBodyText = showBodyInfo ? "Hide Body Info" : "Show Body Info";
-            ResetWindowButton(ref showBodyInfo, showBodyText, "Toggle the display of body information");
-
-            string showBodyOrbitText = showBodyOrbitInfo ? "Hide Body Orbit Info" : "Show Body Orbit Info";
-            ResetWindowButton(ref showBodyOrbitInfo, showBodyOrbitText, "Toggle the display of body orbit information");
-
             if (GUILayout.Button("Reset All Body Orbits"))
             {
                 showOrbitResetWindow = true;
             }
 
-            string debugButtonText = debugMode ? "Disable Debug Mode" : "Enable Debug Mode"; // TODO take this out of the settings window before release
+#if DEBUG
+            string debugButtonText = debugMode ? "Disable Debug Mode" : "Enable Debug Mode";
             ResetWindowButton(ref debugMode, debugButtonText);
+#endif
 
             Tooltip.Instance?.RecordTooltip(id);
             GUI.DragWindow();
@@ -1205,7 +1207,7 @@ namespace CelestialBodyMover
 
         private void MakeOrbitResetWindow(int id)
         {
-            GUILayout.Label(new GUIContent("Are you sure you want to reset all body orbits to their original parameters?", "The bodies will be set to their original orbits, and then the bodies will be moved along their orbits to get to the current time"));
+            GUILayout.Label(new GUIContent("Are you sure you want to reset all body orbits to their original parameters?", "The bodies will be set to their original orbits, and then the bodies will be moved along their orbits to get to the current time. All bodies will have their ability to change SoIs disabled."));
             
             if (GUILayout.Button("Yes"))
             {
@@ -1655,7 +1657,7 @@ namespace CelestialBodyMover
             }
         }
 
-        private void MoveBodyImpact(Vessel vessel, CelestialBody body, Vector3d vesselVelocity, Vector3d radiusVec, Vector3d bodyVelocity, double currentUT)
+        private void MoveBodyImpact(Vessel vessel, CelestialBody body, Vector3d surfaceVelocity, Vector3d radiusVec, Vector3d bodyVelocity, double currentUT)
         {
             Vector3d normal = -radiusVec.normalized;
 
@@ -1666,12 +1668,9 @@ namespace CelestialBodyMover
             Vector3d position = orbit.getRelativePositionAtUT(currentUT); // same as (orbit.getTruePositionAtUT(currentUT) - orbit.referenceBody.getTruePositionAtUT(currentUT)).xzy;
             Vector3d axis = body.angularVelocity.normalized;
 
-            Vector3d rotationVelocity = Vector3d.Cross(radiusVec, body.angularVelocity);
-            Vector3d relativeVelocity = vesselVelocity - rotationVelocity;
-
-            double speedNormal = Vector3d.Dot(relativeVelocity, normal);
+            double speedNormal = Vector3d.Dot(surfaceVelocity, normal);
             Vector3d velocityNormal = speedNormal * normal;
-            Vector3d velocityTangent = relativeVelocity - velocityNormal;
+            Vector3d velocityTangent = surfaceVelocity - velocityNormal;
 
             double impulseNormal = speedNormal / sumInverseMass;
             Vector3d impulseNormalVec = impulseNormal * normal;
@@ -1681,6 +1680,7 @@ namespace CelestialBodyMover
 
             SetPositionVelocity(position, newBodyVelocity, ref orbit, currentUT);
             string displayName = Util.GetBodyName(body);
+            string message = $"The Active Vessel ({vessel.vesselName}) impacted with {displayName} at a velocity of {surfaceVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {newBodyVelocity.magnitude - bodyVelocity.magnitude:G17}m/s)";
 
             if (mainBody.rotates)
             {
@@ -1707,16 +1707,16 @@ namespace CelestialBodyMover
                 int newDirection = Math.Sign(body.rotationPeriod);
                 double newAngVelocity = body.angularVelocity.magnitude * newDirection * radToDeg;
                 bool changedDirection = initialDirection != newDirection;
-                string msg = $"A vessel impacted with {displayName} at a velocity of {relativeVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {newBodyVelocity.magnitude - bodyVelocity.magnitude:G17}m/s), " +
-                    $"and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity:G17}\u00B0/s, or {body.rotationPeriod - initialPeriod:G17}s)" + (changedDirection ? ", reversing the direction of its rotation." : ".");
-                Util.Log(msg);
-                PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", msg, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
+                message += $", and changing its angular velocity from {initialAngVelocity:G5}\u00B0/s to {newAngVelocity:G5}\u00B0/s (change of {newAngVelocity - initialAngVelocity:G17}\u00B0/s, or {body.rotationPeriod - initialPeriod:G17}s)"
+                    + (changedDirection ? ", reversing the direction of its rotation." : ".");
+                Util.Log(message);
+                PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", message, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
             }
             else // what even uses this? maybe for like stars or something
             {
-                string msg = $"A vessel impacted with {displayName} at a velocity of {relativeVelocity.magnitude:G5}m/s, changing the velocity of {displayName} from {bodyVelocity.magnitude:G5}m/s to {newBodyVelocity.magnitude:G5}m/s (change of {(newBodyVelocity.magnitude - bodyVelocity.magnitude):G5}m/s).";
-                Util.Log(msg);
-                PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", msg, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
+                message += ".";
+                Util.Log(message);
+                PopupDialog.SpawnPopupDialog(popupAnchor, popupAnchor, "CBMImpactDetected", "Impact Detected!", message, Localizer.Format("#autoLOC_190905"), false, HighLogic.UISkin, false);
             }
         }
 
@@ -1775,13 +1775,13 @@ namespace CelestialBodyMover
                     if (situation == Situations.FLYING || situation == Situations.SUB_ORBITAL || situation == Situations.ORBITING || situation == Situations.ESCAPING)
                     {
                         //Util.Log($"Valid situation in ImpactCoroutine");
-                        vesselVelocity = vessel.obt_velocity;
+                        surfaceVelocity = vessel.srf_velocity;
                         vesselVerticalSpeed = vessel.verticalSpeed;
                         vesselID = vessel.id;
                     }
                     else
                     {
-                        vesselVelocity = Vector3.zero;
+                        surfaceVelocity = Vector3d.zero;
                         vesselVerticalSpeed = 0f;
                     }
 
@@ -1794,14 +1794,14 @@ namespace CelestialBodyMover
 
                 //Util.Log($"Triggered impact coroutine 2, impactDetected: {impactDetected}");
 
-                if (vessel.id == vesselID && !VectorNullOrZero(vesselVelocity) && Util.GetBodyOrbit(mainBody, out _) && !VectorNullOrZero(bodyVelocity))
+                if (vessel.id == vesselID && !VectorNullOrZero(surfaceVelocity) && Util.GetBodyOrbit(mainBody, out _) && !VectorNullOrZero(bodyVelocity))
                 {
                     // third OR statement is copied from Vessel.CheckKill()
                     if (impactDetected || Math.Abs(vesselVerticalSpeed) > minImpactSpeed || (!vessel.LandedOrSplashed && !vessel.HoldPhysics && vessel.altitude < ((vessel.terrainAltitude != -1d) ? vessel.terrainAltitude : -250d)))
                     {
                         //Util.Log($"Impact used. impactDetected: {impactDetected}, vesselVerticalSpeed: {vesselVerticalSpeed}, minImpactSpeed: {minImpactSpeed}, vessel.LandedOrSplashed: {vessel.LandedOrSplashed}, vessel.HoldPhysics: {vessel.HoldPhysics}, vessel.altitude: {vessel.altitude}");
                         double currentUT = Planetarium.GetUniversalTime();
-                        MoveBodyImpact(vessel, mainBody, vesselVelocity, radiusVec, bodyVelocity, currentUT);
+                        MoveBodyImpact(vessel, mainBody, surfaceVelocity, radiusVec, bodyVelocity, currentUT);
                         vessel.MurderCrew(); // probably not needed
                         vessel.Die(); // probably not needed
                         vessel.rootPart.explode((float)(vessel.terrainAltitude - vessel.altitude));

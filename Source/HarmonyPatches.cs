@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+//using KSP.UI.Screens.Mapview;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,7 +34,6 @@ namespace CelestialBodyMover
     }
 
     // TODO: the stock jool system is unstable, laythe and vall get thrown out when using high time warp.
-    // TODO: make the bodys' orbits have escape and encounter map icons
     [HarmonyPatch(typeof(OrbitDriver))]
     public static class OrbitDriverPatches
     {
@@ -127,17 +127,17 @@ namespace CelestialBodyMover
             if (isHyperbolic && __instance.orbit.eccentricity < 1d)
             {
                 isHyperbolicField.SetValue(__instance, false);
-                if (__instance.vessel != null) // TODO, make this apply to celestial bodies too
+                if (__instance.vessel != null)
                 {
-                    GameEvents.onVesselOrbitClosed.Fire(__instance.vessel);
+                    GameEvents.onVesselOrbitClosed.Fire(__instance.vessel); // onVesselOrbitClosed is never used by KSP
                 }
             }
             if (!isHyperbolic && __instance.orbit.eccentricity > 1d)
             {
                 isHyperbolicField.SetValue(__instance, true);
-                if (__instance.vessel != null) // TODO, make this apply to celestial bodies too
+                if (__instance.vessel != null)
                 {
-                    GameEvents.onVesselOrbitEscaped.Fire(__instance.vessel);
+                    GameEvents.onVesselOrbitEscaped.Fire(__instance.vessel); // onVesselOrbitEscaped is never used by KSP
                 }
             }
             if (__instance.drawOrbit)
@@ -191,6 +191,7 @@ namespace CelestialBodyMover
             return false;
         }
 
+#pragma warning disable IDE0060
         [HarmonyPatch(nameof(OrbitDriver.OnRailsSOITransition))]
         [HarmonyPrefix]
         public static void Prefix_OnRailsSOITransition(ref OrbitDriver __instance, Orbit ownOrbit, CelestialBody to)
@@ -203,6 +204,7 @@ namespace CelestialBodyMover
             }
         }
 
+
         [HarmonyPatch(nameof(OrbitDriver.OnRailsSOITransition))]
         [HarmonyPostfix]
         public static void Postfix_OnRailsSOITransition(ref OrbitDriver __instance, Orbit ownOrbit, CelestialBody to)
@@ -213,6 +215,7 @@ namespace CelestialBodyMover
                     to.orbitingBodies.Add(__instance.celestialBody);
             }
         }
+#pragma warning restore IDE0060
 
         private static bool InHillSphereAndSOI(CelestialBody child, CelestialBody newParent)
         {
@@ -301,6 +304,20 @@ namespace CelestialBodyMover
             return false;
         }
     }
+
+    // TODO: make the bodys' orbits have escape and encounter map icons
+    // this would probably have to hyjack the vessel orbit rendering, which as i described in https://discord.com/channels/1113137628305440818/1494435965383741640/1496465079556636673 i currently cant find bc i dont have access to unity profiling
+    //[HarmonyPatch(typeof(MapNode))]
+    //public static class MapNodePatches
+    //{
+    //    [HarmonyPatch("Init")]
+    //    [HarmonyPostfix]
+    //    public static void Postfix_Init(ref MapNode __instance)
+    //    {
+    //        __instance.Interactable = true;
+    //        __instance.InputBlocking = true;
+    //    }
+    //}
 
     // steamroller:
     // Take a look at how BurstPQS integrates with parallax continued for an example of how to patch something without requiring a dependency on it
