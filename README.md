@@ -50,3 +50,19 @@ Source Code: https://github.com/Clayell/CelestialBodyMover/tree/master/Source
 
 ### License:
 This mod is subject to the MIT license. (see [LICENSE.md](https://github.com/Clayell/CelestialBodyMover/blob/master/LICENSE.md))
+
+### Media:
+
+#### Images:
+![Thrust](https://i.imgur.com/P7HrwAP.png)
+
+![Gravity](https://i.imgur.com/7WDKTdr.png)
+
+![Impact](https://i.imgur.com/FKTGo1D.png)
+
+#### Videos:
+[Moving bodies with thrust](https://youtu.be/W7Jd040uetA)
+
+[Moving bodies with gravity](https://youtu.be/EJK8Sxqn6d8)
+
+[Moving bodies with an impact](https://youtu.be/W6uGWHxCu3w)
