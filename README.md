@@ -39,6 +39,9 @@ Source Code: https://github.com/Clayell/CelestialBodyMover/tree/master/Source
 * ClickThroughBlocker
 * Harmony2
 
+#### Compatible With:
+* All solar systems (file an [issue](https://github.com/Clayell/CelestialBodyMover/issues) if your solar system does not work)
+
 #### Incompatible with:
 * Principia
 
