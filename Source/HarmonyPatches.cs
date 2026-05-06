@@ -10,6 +10,11 @@ namespace CelestialBodyMover
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     public class HarmonyPatcher : MonoBehaviour
     {
+        void Awake()
+        {
+            if (Util.PrincipiaInstalled()) Destroy(this);
+        }
+        
         void Start()
         {
             var harmony = new Harmony("CelestialBodyMover.HarmonyPatcher");

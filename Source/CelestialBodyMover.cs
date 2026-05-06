@@ -85,6 +85,8 @@ namespace CelestialBodyMover
         }
 
         internal static bool CanChangeDeltaV() => CelestialBodyMover.Instance != null && CelestialBodyMover.Instance.isActive && CelestialBodyMover.Instance.isFrozen && CelestialBodyMover.Instance.includeBodyMass;
+
+        internal static bool PrincipiaInstalled() => AssemblyLoader.loadedAssemblies.Any(a => a.name.Equals("principia.ksp_plugin_adapter", StringComparison.OrdinalIgnoreCase));
     }
 
     [KSPScenario(ScenarioCreationOptions.AddToAllGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
@@ -236,6 +238,12 @@ namespace CelestialBodyMover
 
         public override void OnAwake() // scenariomodule stuff needs to run before we call our Awake stuff 
         {
+            if (Util.PrincipiaInstalled())
+            {
+                Util.LogWarning($"Principia detected. Disabling CBM.");
+                Destroy(this);
+            }
+            
             Instance = this; // this needs to be here and not in the normal Awake()
 
             //Util.Log("Awake called");
@@ -913,20 +921,23 @@ namespace CelestialBodyMover
 
                                 LabelValueDouble("Force Alignment Offset:", angleToCenter, "\u00B0", "The angle that the force is offset from the center by, where 0\u00B0 indicates maximum force", includeUnitSpace: false);
                                 LabelValueDouble("Effective Thrust:", effectiveThrust, "N", "The component of force pointing towards the center");
-
-                                if (Math.Abs(alignmentToAxis) > 1d - tolerance)
+                                
+                                if (mainBody.rotates)
                                 {
-                                    GUILayout.Space(10);
-                                    GUILayout.Label(new GUIContent("Torque not aligned", "Force fully aligned with axis of body, no torque"));
-                                }
-                                else
-                                {
-                                    double angleToAxis = Math.Acos(alignmentToAxis) * radToDeg;
+                                    if (Math.Abs(alignmentToAxis) > 1d - tolerance)
+                                    {
+                                        GUILayout.Space(10);
+                                        GUILayout.Label(new GUIContent("Torque not aligned", "Force fully aligned with axis of body, no torque"));
+                                    }
+                                    else
+                                    {
+                                        double angleToAxis = Math.Acos(alignmentToAxis) * radToDeg;
 
-                                    LabelValueDouble("Torque Alignment Offset:", angleToAxis, "\u00B0", "The angle that the torque is offset from the axis by, where 90\u00B0 indicates maximum torque", includeUnitSpace: false);
-                                    LabelValueDouble("Torque:", torqueAlongAxis, "Nm", "The component of torque perpendicular to the axis");
+                                        LabelValueDouble("Torque Alignment Offset:", angleToAxis, "\u00B0", "The angle that the torque is offset from the axis by, where 90\u00B0 indicates maximum torque", includeUnitSpace: false);
+                                        LabelValueDouble("Torque:", torqueAlongAxis, "Nm", "The component of torque perpendicular to the axis");
 
-                                    LabelValueDouble($"Angular Acceleration:", bodyAngularAccel * radToDeg, "\u00B0/s\u00B2");
+                                        LabelValueDouble($"Angular Acceleration:", bodyAngularAccel * radToDeg, "\u00B0/s\u00B2");
+                                    }
                                 }
                             }
                         }
@@ -944,7 +955,7 @@ namespace CelestialBodyMover
                     double gravitationalAcceleration = mainBody.gravParameter / (radius * radius);
                     LabelValueDouble("Gravitational Acceleration:", -gravitationalAcceleration, "m/s\u00B2", includeSpace: false);
                     double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
-                    LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2");
+                    LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "If not attached to the surface and thus the body's rotation in some way, this can be ignored", "m/s\u00B2");
                     double actualMass = GetVesselMass(vessel);
                     double mass = actualMass + (Util.CanChangeDeltaV() ? mainBody.Mass : 0d);
                     string massTooltip = Util.CanChangeDeltaV() ? $"Currently factoring in the mass of {displayName} for vessel mass, the actual vessel mass is {actualMass:G5} kg" : "";
@@ -1579,6 +1590,8 @@ namespace CelestialBodyMover
         // TODO: technically, theres nothing that prevents the star's rotation from being changed. we should add this
         private void SetAngularVelocity(Vector3d originalAngularVelocity, Vector3d newAngularVelocity, ref CelestialBody body, double currentUT)
         {
+            if (!body.rotates) return;
+            
             if (body.tidallyLocked) body.tidallyLocked = false;
             
             double initialPeriod = body.rotationPeriod;
