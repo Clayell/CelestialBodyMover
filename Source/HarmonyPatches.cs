@@ -42,7 +42,7 @@ namespace CelestialBodyMover
         { // KSP has no idea how to handle soi transitions for non-vessels, so we'll make this patch be always active
             //Util.Log($"patching update orbit");
 
-            if (!__instance.Ready)
+            if (!__instance.ready)
             {
                 return false;
             }

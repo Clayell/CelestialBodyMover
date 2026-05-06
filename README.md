@@ -7,9 +7,9 @@
 
 ###### Put your hands on the rails of the body orbits and push them aside. - [steamroller](https://discord.com/channels/601452466017665040/601458726192414741/1493350537108787201)
 
-### Provides a way for the player to move any celestial body through thrust, gravity, or impacts.
+### Provides a way for the player to move any celestial body through vessel thrust, gravity, or impacts.
 
-Celestial Body Mover (CBM) lets you move and change the spin* of any* body in KSP in 3 different ways:
+Celestial Body Mover (CBM) lets vessels move and change the spin* of any* body in KSP in 3 different ways:
 
 * Aiming down at the body with a rocket engine
 	* CBM allows you to keep your vessel stationary while above the surface of the body, and allows you to include the body's mass in your Delta-V calculations
