@@ -9,7 +9,7 @@
 
 ### Provides a way for vessels to move any celestial body through thrust, gravity, or impacts.
 
-Celestial Body Mover (CBM) lets vessels move and change the spin* of any* body in KSP in 3 different ways:
+Celestial Body Mover (CBM) lets vessels move and change the spin\* of any\* body in KSP in 3 different ways:
 
 * Aiming down at the body with a rocket engine
 	* CBM allows you to keep your vessel stationary while above the surface of the body, and allows you to include the body's mass in your Delta-V calculations
