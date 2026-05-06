@@ -87,7 +87,7 @@ namespace CelestialBodyMover
         internal static bool CanChangeDeltaV() => CelestialBodyMover.Instance != null && CelestialBodyMover.Instance.isActive && CelestialBodyMover.Instance.isFrozen && CelestialBodyMover.Instance.includeBodyMass;
     }
 
-    [KSPScenario(ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
+    [KSPScenario(ScenarioCreationOptions.AddToAllGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION)]
     public class CelestialBodyMover : ScenarioModule
     {
         // note: KSPField will not work on static fields

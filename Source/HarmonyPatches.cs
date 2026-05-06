@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using UnityEngine;
 
 namespace CelestialBodyMover
@@ -37,42 +36,13 @@ namespace CelestialBodyMover
     [HarmonyPatch(typeof(OrbitDriver))]
     public static class OrbitDriverPatches
     {
-        internal static readonly FieldInfo readyField = AccessTools.Field(typeof(OrbitDriver), "ready");
-        internal static readonly FieldInfo fdtLastField = AccessTools.Field(typeof(OrbitDriver), "fdtLast");
-        internal static readonly FieldInfo isHyperbolicField = AccessTools.Field(typeof(OrbitDriver), "isHyperbolic");
-
         [HarmonyPatch(nameof(OrbitDriver.UpdateOrbit))]
         [HarmonyPrefix]
         public static bool Prefix_UpdateOrbit(ref OrbitDriver __instance, bool offset = true)
         { // KSP has no idea how to handle soi transitions for non-vessels, so we'll make this patch be always active
             //Util.Log($"patching update orbit");
-            if (readyField == null)
-            {
-                Util.LogWarning("readyField is null!");
-                return true;
-            }
 
-            bool ready = (bool)readyField.GetValue(__instance);
-
-            if (fdtLastField == null)
-            {
-                Util.LogWarning("fdtLastField is null!");
-                return true;
-            }
-
-            double fdtLast = (double)fdtLastField.GetValue(__instance);
-
-            if (isHyperbolicField == null)
-            {
-                Util.LogWarning("isHyperbolicField is null!");
-                return true;
-            }
-
-            bool isHyperbolic = (bool)isHyperbolicField.GetValue(__instance);
-
-            // now begins the actual method
-
-            if (!ready)
+            if (!__instance.Ready)
             {
                 return false;
             }
@@ -103,38 +73,38 @@ namespace CelestialBodyMover
                     {
                         if (!offset)
                         {
-                            fdtLastField.SetValue(__instance, -0d);
+                            __instance.fdtLast = -0d;
                         }
                         if (!__instance.CheckDominantBody(__instance.vessel.CoMD))
                         {
-                            __instance.TrackRigidbody(__instance.referenceBody, -fdtLast);
+                            __instance.TrackRigidbody(__instance.referenceBody, -__instance.fdtLast);
                         }
                     }
                     else if (CanChangeSOI)
                     {
                         if (!offset)
                         {
-                            fdtLastField.SetValue(__instance, -0d);
+                            __instance.fdtLast = -0d;
                         }
                         if (!__instance.CheckDominantBody(__instance.referenceBody.position + __instance.pos))
                         {
-                            __instance.TrackRigidbody(__instance.referenceBody, -fdtLast);
+                            __instance.TrackRigidbody(__instance.referenceBody, -__instance.fdtLast);
                         }
                     }
                     break;
             }
-            fdtLastField.SetValue(__instance, TimeWarp.fixedDeltaTime);
-            if (isHyperbolic && __instance.orbit.eccentricity < 1d)
+            __instance.fdtLast = TimeWarp.fixedDeltaTime;
+            if (__instance.isHyperbolic && __instance.orbit.eccentricity < 1d)
             {
-                isHyperbolicField.SetValue(__instance, false);
+                __instance.isHyperbolic = false;
                 if (__instance.vessel != null)
                 {
                     GameEvents.onVesselOrbitClosed.Fire(__instance.vessel); // onVesselOrbitClosed is never used by KSP
                 }
             }
-            if (!isHyperbolic && __instance.orbit.eccentricity > 1d)
+            if (!__instance.isHyperbolic && __instance.orbit.eccentricity > 1d)
             {
-                isHyperbolicField.SetValue(__instance, true);
+                __instance.isHyperbolic = true;
                 if (__instance.vessel != null)
                 {
                     GameEvents.onVesselOrbitEscaped.Fire(__instance.vessel); // onVesselOrbitEscaped is never used by KSP
@@ -282,7 +252,7 @@ namespace CelestialBodyMover
     {
         // the original UpdateCBsRecursive throws an ArgumentOutOfRangeException because our OnRailsSOITransition patch modifies the orbitingBodies while it is running
 
-        [HarmonyPatch("UpdateCBsRecursive")]
+        [HarmonyPatch(nameof(Planetarium.UpdateCBsRecursive))]
         [HarmonyPrefix]
         public static bool Prefix_UpdateCBsRecursive(ref Planetarium __instance, CelestialBody cb)
         {
