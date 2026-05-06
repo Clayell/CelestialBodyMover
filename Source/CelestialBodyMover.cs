@@ -17,6 +17,11 @@ namespace CelestialBodyMover
     [KSPAddon(KSPAddon.Startup.MainMenu, true)] // startup on main menu according to https://github.com/linuxgurugamer/ToolbarControl/wiki/Registration
     public class RegisterToolbar : MonoBehaviour
     {
+        void Awake()
+        {
+            if (Util.PrincipiaInstalled()) Destroy(this);
+        }
+
         void Start()
         {
             ToolbarControl.RegisterMod("CelestialBodyMover", "CelestialBodyMover");
