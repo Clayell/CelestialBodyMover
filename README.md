@@ -19,7 +19,7 @@ Celestial Body Mover (CBM) lets vessels move and change the spin\* of any\* body
 
 ###### *The body's rotational axis is fixed due to KSP constraints, but the rotation along this axis can be fully changed and even reversed.
 
-###### *The host body of a system (e.g. the star) cannot be moved or have its spin changed
+###### *The host body of a system (e.g. the star) cannot be moved, although it can have its spin changed.
 
 Celestial Body Mover also provides you with lines in the map view that display the body's orbit vectors (and your force vector, if available), information about the vessel, body, and the body's orbit, and options to allow the body to move into a different sphere of influence.
 
