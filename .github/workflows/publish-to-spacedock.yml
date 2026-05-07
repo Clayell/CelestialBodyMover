@@ -12,7 +12,7 @@ jobs:
         id: get-release-info
         uses: KSPModdingLibs/KSPBuildTools/.github/actions/get-release-info@1.1.1
         with:
-          release-tag: ${{ inputs.release-tag }}
+          release-tag: ''
 
       - name: upload-to-spacedock
         uses: ./.github/actions/spacedock-upload
