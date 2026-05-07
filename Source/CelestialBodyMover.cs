@@ -608,19 +608,8 @@ namespace CelestialBodyMover
             }
         }
 
-        void Update()
+        void FixedUpdate()
         {
-            if (debugMode)
-            {
-                if (!CheatOptions.InfinitePropellant) CheatOptions.InfinitePropellant = true;
-                if (!CheatOptions.InfiniteElectricity) CheatOptions.InfiniteElectricity = true;
-                if (!CheatOptions.IgnoreMaxTemperature) CheatOptions.IgnoreMaxTemperature = true;
-                if (!CheatOptions.NoCrashDamage) CheatOptions.NoCrashDamage = true;
-                if (!CheatOptions.UnbreakableJoints) CheatOptions.UnbreakableJoints = true;
-                if (!CheatOptions.IgnoreEVAConstructionMassLimit) CheatOptions.IgnoreEVAConstructionMassLimit = true;
-                if (!CheatOptions.IgnoreKerbalInventoryLimits) CheatOptions.IgnoreKerbalInventoryLimits = true;
-            }
-
             // TODO: look into fixing kopernicus bug in https://github.com/Kopernicus/Kopernicus/issues/825
             Vessel vessel = FlightGlobals.ActiveVessel;
             bool isFlight = Util.IsFlight();
@@ -667,7 +656,23 @@ namespace CelestialBodyMover
                 }
             }
 
-            bool canDisplayLines = (isFlight || HighLogic.LoadedScene == GameScenes.TRACKSTATION) && displayLines;
+            impactDetected = false;
+        }
+
+        void Update()
+        {
+            if (debugMode)
+            {
+                if (!CheatOptions.InfinitePropellant) CheatOptions.InfinitePropellant = true;
+                if (!CheatOptions.InfiniteElectricity) CheatOptions.InfiniteElectricity = true;
+                if (!CheatOptions.IgnoreMaxTemperature) CheatOptions.IgnoreMaxTemperature = true;
+                if (!CheatOptions.NoCrashDamage) CheatOptions.NoCrashDamage = true;
+                if (!CheatOptions.UnbreakableJoints) CheatOptions.UnbreakableJoints = true;
+                if (!CheatOptions.IgnoreEVAConstructionMassLimit) CheatOptions.IgnoreEVAConstructionMassLimit = true;
+                if (!CheatOptions.IgnoreKerbalInventoryLimits) CheatOptions.IgnoreKerbalInventoryLimits = true;
+            }
+
+            bool canDisplayLines = (Util.IsFlight() || HighLogic.LoadedScene == GameScenes.TRACKSTATION) && displayLines;
             bool IsRendererHidden(MapLineRenderer renderer) => renderer == null || renderer.IsHidden;
             if (canDisplayLines)
             {
@@ -712,7 +717,6 @@ namespace CelestialBodyMover
             }
 
             needForceLineReset = false;
-            impactDetected = false;
         }
 
         void OnGUI()
@@ -885,8 +889,11 @@ namespace CelestialBodyMover
 
                     if (isFrozen)
                     {
-                        bool canUseForce = HeightValid(vessel) && !InRailsWarp() && alignmentToCenter > 0d;
-                        LabelValue("Thrust Is Applied?", $"{canUseForce}", $"Must be a valid height ({HeightValid(vessel)}), not in rails warp ({!InRailsWarp()}), and thrust must be pointing towards the center ({alignmentToCenter > 0d})");
+                        bool heightValid = HeightValid(vessel);
+                        bool inRailsWarp = InRailsWarp();
+                        bool alignedToCenter = alignmentToCenter > 0d;
+                        bool canUseForce = heightValid && !inRailsWarp && alignedToCenter;
+                        LabelValue("Thrust Is Applied?", $"{canUseForce}", $"Must be at a valid height ({heightValid}), not in rails warp ({!inRailsWarp}), and thrust must be pointing towards the center ({alignedToCenter})");
                     }
                     else
                     {
@@ -960,7 +967,7 @@ namespace CelestialBodyMover
                     double gravitationalAcceleration = mainBody.gravParameter / (radius * radius);
                     LabelValueDouble("Gravitational Acceleration:", -gravitationalAcceleration, "m/s\u00B2", includeSpace: false);
                     double centrifugalAcceleration = tau * tau * radius / (mainBody.rotationPeriod * mainBody.rotationPeriod);
-                    LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "If not attached to the surface and thus the body's rotation in some way, this can be ignored", "m/s\u00B2");
+                    LabelValueDouble("Centrifugal Acceleration:", centrifugalAcceleration, "m/s\u00B2", "If not attached to the surface and thus the body's rotation in some way, this can be ignored");
                     double actualMass = GetVesselMass(vessel);
                     double mass = actualMass + (Util.CanChangeDeltaV() ? mainBody.Mass : 0d);
                     string massTooltip = Util.CanChangeDeltaV() ? $"Currently factoring in the mass of {displayName} for vessel mass, the actual vessel mass is {actualMass:G5} kg" : "";
@@ -1601,7 +1608,6 @@ namespace CelestialBodyMover
             
             double initialPeriod = body.rotationPeriod;
             double newPeriod = tau / newAngularVelocity.magnitude;
-            //Util.Log($"rotationalInertia: {rotationalInertia}, bodyAngularAccel: {bodyAngularAccel}, torqueAlongAxis: {torqueAlongAxis}, Time.fixedDeltaTime: {Time.fixedDeltaTime}, body.angularVelocity: {body.angularVelocity} (mag: {body.angularVelocity.magnitude}), deltaAngularV: {deltaAngularV}, newAngularVelocity: {newAngularVelocity} (mag: {newAngularVelocity.magnitude}), body.rotationPeriod: {body.rotationPeriod}, newPeriod: {newPeriod}");
             body.rotationPeriod = newPeriod; // angular velocity is set by rotation period in CBUpdate
             if (Vector3d.Dot(originalAngularVelocity, newAngularVelocity) < 0d)
             {
