@@ -610,6 +610,8 @@ namespace CelestialBodyMover
 
         void FixedUpdate()
         {
+            // FixedUpdate doesnt run when FlightDriver.Pause is true
+
             // TODO: look into fixing kopernicus bug in https://github.com/Kopernicus/Kopernicus/issues/825
             Vessel vessel = FlightGlobals.ActiveVessel;
             bool isFlight = Util.IsFlight();
@@ -634,7 +636,7 @@ namespace CelestialBodyMover
                 {
                     double currentUT = Planetarium.GetUniversalTime();
                     bodyVelocity = orbit.getOrbitalVelocityAtUT(currentUT);
-                    if (isFlight && isActive && !FlightDriver.Pause && !vessel.HoldPhysics)
+                    if (isFlight && isActive && !vessel.HoldPhysics)
                     {
                         if (isFrozen)
                         {
