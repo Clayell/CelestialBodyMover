@@ -854,7 +854,7 @@ namespace CelestialBodyMover
             ShowSettingsButton(ref showSettingsWindow, "Show Settings");
             GUILayout.EndHorizontal();
 
-            double currentUT = Planetarium.GetUniversalTime();
+            //double currentUT = Planetarium.GetUniversalTime();
             if (Util.GetBodyOrbit(mainBody, out Orbit orbit))
             {
                 if (isFlight && isActive)
