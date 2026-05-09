@@ -27,4 +27,4 @@ jobs:
           mod_id: ${{ vars.SPACEDOCK_MOD_ID }}
           version: ${{ steps.get-release-info.outputs.version-string }}
           zipball: ${{ steps.get-release-info.outputs.artifact-file }}
-          changelog: ''
+          changelog: ${{ steps.get-release-info.outputs.changelog-file }}
