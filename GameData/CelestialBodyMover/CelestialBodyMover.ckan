@@ -1,7 +1,7 @@
 identifier: CelestialBodyMover
 name: Celestial Body Mover (CBM)
 abstract: A mod that lets vessels move celestial bodies in KSP.
-description: Provides a way for the player to move any celestial body through thrust, gravity, or impacts.
+description: Provides a way for vessels to move any celestial body through thrust, gravity, or impacts.
 comment: Indexed by author. Please report any problems at the repository bugtracker.
 $vref: '#/ckan/ksp-avc'
 resources:

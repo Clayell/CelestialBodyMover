@@ -273,6 +273,16 @@ namespace CelestialBodyMover
             GameEvents.onVesselExplodeGroundCollision.Add(ImpactDetected);
             GameEvents.onCollision.Add(ImpactDetected);
             GameEvents.OnCollisionEnhancerHit.Add(ImpactDetected);
+
+            PluginDataFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
+
+            string saveNode = "originalOrbits";
+            string globalFolder = Path.Combine(PluginDataFolder, "Global Save");
+            if (!File.Exists(Path.Combine(globalFolder, saveNode + ".cfg")))
+            {
+                Util.Log($"Creating global original orbits save.");
+                SaveOrbitDetails(saveNode, globalFolder);
+            }
         }
 
         void Start()
@@ -289,19 +299,9 @@ namespace CelestialBodyMover
 
             InitToolbar();
 
-            PluginDataFolder = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/CelestialBodyMover/PluginData/");
-
             //backgroundThrustInstalled = BackgroundThrustWrapper.Init();
 
             Tooltip.RecreateInstance();
-
-            string savePath = Path.Combine(PluginDataFolder, "Save Folders", HighLogic.SaveFolder, "originalOrbits.cfg");
-            if (firstLoad || !File.Exists(savePath))
-            {
-                SaveOrbitDetails("originalOrbits");
-
-                firstLoad = false;
-            }
         }
 
         void OnDestroy()
@@ -376,10 +376,37 @@ namespace CelestialBodyMover
 
         public override void OnLoad(ConfigNode root)
         {
+            string saveNode = "originalOrbits";
+            string saveFolder = Path.Combine(PluginDataFolder, "Save Folders", HighLogic.SaveFolder);
+            string globalFolder = Path.Combine(PluginDataFolder, "Global Save");
+            if (firstLoad || !File.Exists(Path.Combine(saveFolder, saveNode + ".cfg"))) // firstLoad isnt initialized until OnLoad is called for the first time
+            {
+                if (File.Exists(Path.Combine(globalFolder, saveNode + ".cfg")))
+                {
+                    Util.Log($"Global original orbits save found, loading it before creating original orbits save for {HighLogic.SaveFolder}.");
+                    if (!LoadOrbitDetails(saveNode, globalFolder))
+                    {
+                        Util.LogWarning($"Failed to load original orbits from global folder.");
+                    }
+                }
+
+                Util.Log($"Creating original orbits save for {HighLogic.SaveFolder}.");
+                SaveOrbitDetails(saveNode, saveFolder);
+
+                firstLoad = false;
+            }
+
             if (!LoadOrbitDetails(root, "savedOrbits"))
             {
-                Util.LogError($"Failed to load saved orbits, loading original orbits");
-                LoadOrbitDetails("originalOrbits");
+                Util.LogWarning($"Failed to load saved orbits, loading original orbits.");
+                if (!LoadOrbitDetails(saveNode, saveFolder)) // a new save was made
+                {
+                    Util.LogWarning($"Failed to load original orbits from save folder, loading global original orbits");
+                    if (!LoadOrbitDetails(saveNode, globalFolder))
+                    {
+                        Util.LogWarning($"Failed to load original orbits from global folder.");
+                    }
+                }
             }
 
             void MakeRect(ref Rect rect, Vector2 pos)
@@ -392,12 +419,11 @@ namespace CelestialBodyMover
             MakeRect(ref bodySOIRect, bodySOIRectPos);
         }
 
-        private void SaveOrbitDetails(string saveNode)
+        private void SaveOrbitDetails(string saveNode, string saveFolder)
         {
             ConfigNode root = new ConfigNode();
-            string savePath = Path.Combine(PluginDataFolder, "Save Folders", HighLogic.SaveFolder);
-            Directory.CreateDirectory(savePath);
-            savePath = Path.Combine(savePath, saveNode + ".cfg");
+            Directory.CreateDirectory(saveFolder);
+            string savePath = Path.Combine(saveFolder, saveNode + ".cfg");
             File.WriteAllText(savePath, ""); // clear file
 
             SaveOrbitDetails(ref root, saveNode);
@@ -412,7 +438,7 @@ namespace CelestialBodyMover
             ConfigNode orbits = root.AddNode(saveNode);
             if (orbits == null)
             {
-                Util.LogError($"Failed to create ORBITS node in {saveNode}");
+                Util.LogError($"Failed to create savedOrbits node in {root}");
                 return;
             }
 
@@ -431,13 +457,15 @@ namespace CelestialBodyMover
                 CelestialBody body = FlightGlobals.Bodies[i];
                 if (body == null)
                 {
-                    Util.LogError($"Failed to get body!");
+                    Util.LogError($"Failed to get body at position {i}!");
+                    continue;
                 }
 
                 ConfigNode bodyNode = orbits.AddNode(body.name);
                 if (bodyNode == null)
                 {
-                    Util.LogError($"Failed to add bodyNode for body {body?.name}");
+                    Util.LogError($"Failed to add bodyNode for body {body.name}!");
+                    continue;
                 }
 
                 string log = "";
@@ -478,15 +506,18 @@ namespace CelestialBodyMover
             return;
         }
 
-        private bool LoadOrbitDetails(string saveNode)
+        private bool LoadOrbitDetails(string saveNode, string saveFolder)
         {
-            string savePath = Path.Combine(PluginDataFolder, "Save Folders", HighLogic.SaveFolder, saveNode + ".cfg");
-            Util.Log($"Loading orbits from {savePath}...");
+            string savePath = Path.Combine(saveFolder, saveNode + ".cfg");
 
             if (!File.Exists(savePath))
             {
                 Util.LogError($"File {savePath} does not exist");
                 return false;
+            }
+            else
+            {
+                Util.Log($"Loading orbits from {savePath}...");
             }
 
             ConfigNode root = ConfigNode.Load(savePath);
@@ -501,17 +532,17 @@ namespace CelestialBodyMover
             ConfigNode orbits = root.GetNode(saveNode);
             if (orbits == null)
             {
-                Util.LogError($"Failed to find ORBITS node in {root}");
+                Util.LogError($"Failed to find savedOrbits node in {root}");
                 return false;
             }
             if (!int.TryParse(orbits.GetValue("numBodies"), out int numBodies))
             {
-                Util.LogError($"Failed to parse numBodies from {root}");
+                Util.LogError($"Failed to parse numBodies in {saveNode}");
                 return false;
             }
             if (!double.TryParse(orbits.GetValue("UT"), out double UT))
             {
-                Util.LogError($"Failed to parse UT from {root}");
+                Util.LogError($"Failed to parse UT in {saveNode}");
                 return false;
             }
 
@@ -532,13 +563,15 @@ namespace CelestialBodyMover
                 CelestialBody body = FlightGlobals.Bodies[i];
                 if (body == null)
                 {
-                    Util.LogError($"Failed to get body!");
+                    Util.LogError($"Failed to get body at position {i}!");
+                    continue;
                 }
 
                 ConfigNode bodyNode = orbits.GetNode(body.name);
                 if (bodyNode == null)
                 {
-                    Util.LogError($"Failed to get bodyNode for body {body?.name}");
+                    Util.LogError($"Failed to get bodyNode for body {body.name}");
+                    continue;
                 }
 
                 string log = "";
@@ -546,7 +579,7 @@ namespace CelestialBodyMover
                 {
                     if (!double.TryParse(bodyNode.GetValue(value), out result))
                     {
-                        Util.LogError($"Failed to parse {value} ({result}) for body {body.name} in {root}");
+                        Util.LogError($"Failed to parse {value} ({result}) for body {body.name} in {saveNode}");
                         return false;
                     }
                     string end = endValue ? "." : ", ";
@@ -578,14 +611,14 @@ namespace CelestialBodyMover
                 CelestialBody referenceBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == bodyNode.GetValue("referenceBody"));
                 if (referenceBody == null)
                 {
-                    Util.LogError($"Failed to parse referenceBody ({referenceBody}) for body {body.name} in {root}");
+                    Util.LogError($"Failed to parse referenceBody ({referenceBody}) for body {body.name} in {saveNode}");
                     continue;
                 }
                 else log += $"referenceBody: {referenceBody}, ";
 
                 if (!bool.TryParse(bodyNode.GetValue("CanChangeSOI"), out bool CanChangeSOI))
                 {
-                    Util.LogError($"Failed to parse CanChangeSOI ({CanChangeSOI}) for body {body.name} in {root}");
+                    Util.LogError($"Failed to parse CanChangeSOI ({CanChangeSOI}) for body {body.name} in {saveNode}");
                     continue;
                 }
                 else log += $"CanChangeSOI: {CanChangeSOI}.";
@@ -1047,33 +1080,33 @@ namespace CelestialBodyMover
 
             if (debugMode)
             {
-                //if (GUILayout.Button("TESTORBIT"))
-                //{
-                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                //    CelestialBody jool = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Jool");
-                //    if (testBody != null)
-                //    {
-                //        Orbit testOrbit = testBody.orbit;
-                //        double ecc = 1.5;
-                //        testBody.referenceBody.orbitingBodies.Remove(testBody);
-                //        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), jool);
-                //        testBody.referenceBody.orbitingBodies.Add(testBody);
-                //    }
-                //}
+                if (GUILayout.Button("TESTORBIT"))
+                {
+                    CelestialBody scylla = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    CelestialBody jool = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Jool");
+                    if (scylla != null && jool != null)
+                    {
+                        Orbit testOrbit = scylla.orbit;
+                        double ecc = 1.5;
+                        scylla.referenceBody.orbitingBodies.Remove(scylla);
+                        testOrbit.SetOrbit(5d, ecc, (jool.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), jool);
+                        scylla.referenceBody.orbitingBodies.Add(scylla);
+                    }
+                }
 
-                //if (GUILayout.Button("TESTORBIT2"))
-                //{
-                //    CelestialBody testBody = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
-                //    CelestialBody Bop = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Bop");
-                //    if (testBody != null)
-                //    {
-                //        Orbit testOrbit = testBody.orbit;
-                //        double ecc = 1.5;
-                //        testBody.referenceBody.orbitingBodies.Remove(testBody);
-                //        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), Bop);
-                //        testBody.referenceBody.orbitingBodies.Add(testBody);
-                //    }
-                //}
+                if (GUILayout.Button("TESTORBIT2"))
+                {
+                    CelestialBody scylla = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Scylla");
+                    CelestialBody Bop = FlightGlobals.Bodies.FirstOrDefault(b => b.name == "Bop");
+                    if (scylla != null && Bop != null)
+                    {
+                        Orbit testOrbit = scylla.orbit;
+                        double ecc = 1.5;
+                        scylla.referenceBody.orbitingBodies.Remove(scylla);
+                        testOrbit.SetOrbit(5d, ecc, (Bop.Radius * 2d) / (1 - ecc), 10d, 20d, 0d, Planetarium.GetUniversalTime(), Bop);
+                        scylla.referenceBody.orbitingBodies.Add(scylla);
+                    }
+                }
 
                 //void SetLatLong(Vector3d vector)
                 //{
@@ -1251,7 +1284,9 @@ namespace CelestialBodyMover
             
             if (GUILayout.Button("Yes"))
             {
-                LoadOrbitDetails("originalOrbits");
+                string saveNode = "originalOrbits";
+                string saveFolder = Path.Combine(PluginDataFolder, "Save Folders", HighLogic.SaveFolder);
+                LoadOrbitDetails(saveNode, saveFolder);
                 showOrbitResetWindow = false;
             }
             if (GUILayout.Button("No"))
