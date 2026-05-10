@@ -196,7 +196,9 @@ namespace CelestialBodyMover
         [KSPField(isPersistant = true)] bool toggleAllSOIChanges = false;
         [KSPField(isPersistant = true)] bool formatTime = true;
         [KSPField(isPersistant = true)] internal bool includeBodyMass = false;
+#pragma warning disable IDE0044
         [KSPField(isPersistant = true)] bool debugMode = false; // TODO add menu to modify orbit manually if debugMode is on
+#pragma warning restore IDE0044
 
         // TODO: add retrograde, radial-in, and anti-normal lines too?
         MapLineRenderer radialLineRenderer;
@@ -1924,5 +1926,7 @@ namespace CelestialBodyMover
                 impactCoroutine = null;
             }
         }
+
+
     }
 }
