@@ -1184,7 +1184,10 @@ namespace CelestialBodyMover
             GUI.enabled = true;
 
             string killThrottleText = killThrottleOnUnfreeze ? "Disable Kill Throttle" : "Enable Kill Throttle";
-            BoolButton(ref killThrottleOnUnfreeze, killThrottleText, "Set throttle to 0 when unfreezing the craft, to prevent RUDs");
+            string killThrottleTextTooltip = isFlight ? "" : "\nThis button is currently disabled, as you are not in flight";
+            GUI.enabled = isFlight;
+            BoolButton(ref killThrottleOnUnfreeze, killThrottleText, "Set throttle to 0 when unfreezing the craft, to prevent RUDs" + killThrottleTextTooltip);
+            GUI.enabled = true;
 
             string homeBody = Util.GetBodyName(FlightGlobals.GetHomeBody());
             string formatTimeText = formatTime ? "Disable Time Formatting" : "Enable Time Formatting";
