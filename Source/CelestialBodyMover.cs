@@ -1691,7 +1691,7 @@ namespace CelestialBodyMover
 
                     bodyAngularAccel = torqueAlongAxis / rotationalInertia;
 
-                    Vector3d deltaAngularV = axis * (bodyAngularAccel * Time.fixedDeltaTime);
+                    Vector3d deltaAngularV = axis * (bodyAngularAccel * TimeWarp.fixedDeltaTime);
 
                     Vector3d newAngularVelocity = body.angularVelocity + deltaAngularV;
 
@@ -1755,7 +1755,7 @@ namespace CelestialBodyMover
             double effectiveThrust = forceVector.magnitude * alignmentToCenter;
             Vector3d forceOnPlanet = forceNormal * effectiveThrust;
             bodyAccel = forceOnPlanet / totalMass;
-            Vector3d deltaV = bodyAccel * Time.fixedDeltaTime;
+            Vector3d deltaV = bodyAccel * TimeWarp.fixedDeltaTime;
             Vector3d position = orbit.getRelativePositionAtUT(currentUT); // same as (orbit.getTruePositionAtUT(currentUT) - orbit.referenceBody.getTruePositionAtUT(currentUT)).xzy;
 
             Vector3d newVelocity = bodyVelocity + deltaV;
